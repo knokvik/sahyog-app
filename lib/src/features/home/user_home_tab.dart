@@ -13,6 +13,9 @@ import '../../core/database_helper.dart';
 import '../../core/sos_state_machine.dart';
 import '../../core/sos_sync_engine.dart';
 import '../../core/ble_advertiser_service.dart';
+import '../../core/ble_scanner_service.dart';
+import '../../core/ble_payload_codec.dart';
+import 'mesh_alert_panel.dart';
 import '../../theme/app_colors.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -42,6 +45,10 @@ class _UserHomeTabState extends State<UserHomeTab>
   String? _activeSosId;
   String? _activeLocalUuid; // UUID of the active local SOS incident
 
+  // Track detected mesh beacons
+  BleBeacon? _detectedBeacon;
+  String _detectedDistance = '';
+
   // Track global SOS from sockets: {id: LatLng}
   final Map<String, LatLng> _globalActiveSos = {};
 
@@ -61,6 +68,12 @@ class _UserHomeTabState extends State<UserHomeTab>
     );
     BleAdvertiserService.instance.ackReceivedNotifier.addListener(
       _onBleAckReceived,
+    );
+    BleScannerService.instance.beaconDetectedNotifier.addListener(
+      _onMeshBeaconDetected,
+    );
+    BleScannerService.instance.distanceNotifier.addListener(
+      _onMeshDistanceUpdated,
     );
   }
 
@@ -167,6 +180,33 @@ class _UserHomeTabState extends State<UserHomeTab>
     }
   }
 
+  void _onMeshBeaconDetected() {
+    final beacon = BleScannerService.instance.beaconDetectedNotifier.value;
+    if (beacon != null && mounted) {
+      setState(() {
+        _detectedBeacon = beacon;
+        _detectedDistance =
+            BleScannerService.instance.distanceNotifier.value[beacon
+                .uuidHash] ??
+            'Nearby';
+      });
+    }
+  }
+
+  void _onMeshDistanceUpdated() {
+    if (_detectedBeacon != null && mounted) {
+      final distance = BleScannerService
+          .instance
+          .distanceNotifier
+          .value[_detectedBeacon!.uuidHash];
+      if (distance != null && distance != _detectedDistance) {
+        setState(() {
+          _detectedDistance = distance;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
@@ -178,6 +218,12 @@ class _UserHomeTabState extends State<UserHomeTab>
     );
     BleAdvertiserService.instance.ackReceivedNotifier.removeListener(
       _onBleAckReceived,
+    );
+    BleScannerService.instance.beaconDetectedNotifier.removeListener(
+      _onMeshBeaconDetected,
+    );
+    BleScannerService.instance.distanceNotifier.removeListener(
+      _onMeshDistanceUpdated,
     );
     super.dispose();
   }
@@ -460,47 +506,82 @@ class _UserHomeTabState extends State<UserHomeTab>
 
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+      child: Stack(
         children: [
-          _UserStatusBanner(user: widget.user),
-          const SizedBox(height: 16),
-          Card(
-            clipBehavior: Clip.antiAlias,
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: SizedBox(height: 220, child: _buildMiniMap()),
-          ),
-          const SizedBox(height: 16),
-          _buildEmergencySOSButton(),
-          const SizedBox(height: 24),
-          Row(
+          ListView(
+            padding: const EdgeInsets.all(16),
             children: [
-              const Icon(
-                Icons.emergency_share_outlined,
-                color: AppColors.criticalRed,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Recent Disaster Alerts',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.5,
+              _UserStatusBanner(user: widget.user),
+              const SizedBox(height: 16),
+              Card(
+                clipBehavior: Clip.antiAlias,
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
+                child: SizedBox(height: 220, child: _buildMiniMap()),
               ),
+              const SizedBox(height: 16),
+              _buildEmergencySOSButton(),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.emergency_share_outlined,
+                    color: AppColors.criticalRed,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Recent Disaster Alerts',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_alerts.isEmpty)
+                _EmptyAlertsState()
+              else
+                ..._alerts.map(
+                  (alert) => _AlertCard(alert: alert, api: widget.api),
+                ),
+              const SizedBox(height: 32),
             ],
           ),
-          const SizedBox(height: 12),
-          if (_alerts.isEmpty)
-            _EmptyAlertsState()
-          else
-            ..._alerts.map(
-              (alert) => _AlertCard(alert: alert, api: widget.api),
+          if (_detectedBeacon != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: MeshAlertPanel(
+                beacon: _detectedBeacon!,
+                distance: _detectedDistance,
+                onRespond: () {
+                  BleScannerService.instance.sendAckBeacon(
+                    _detectedBeacon!.uuidHash,
+                  );
+                  setState(() {
+                    _detectedBeacon = null;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Relay started! Acknowledgment sent via BLE.',
+                      ),
+                      backgroundColor: AppColors.primaryGreen,
+                    ),
+                  );
+                },
+                onDismiss: () {
+                  setState(() {
+                    _detectedBeacon = null;
+                  });
+                },
+              ),
             ),
-          const SizedBox(height: 32),
         ],
       ),
     );

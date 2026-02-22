@@ -3,8 +3,10 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  battery_plus
   connectivity_plus
   file_selector_windows
+  flutter_ble_peripheral
   geolocator_windows
   url_launcher_windows
 )

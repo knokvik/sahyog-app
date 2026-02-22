@@ -110,7 +110,7 @@ class BleAdvertiserService {
       SosLog.event(
         '0x${incident.uuidHash.toRadixString(16)}',
         'ADVERTISE_START',
-        'interval=${intervalMs}ms, battery=$batteryLevel%',
+        'interval=${intervalMs}ms, battery=$batteryLevel%, type=${incident.type}',
       );
     } catch (e) {
       SosLog.warn('BLE_ADVERTISER', 'Failed to start: $e');
@@ -221,7 +221,7 @@ class BleAdvertiserService {
       SosLog.event(
         '0x${uuidHash.toRadixString(16)}',
         'ACK_BEACON_START',
-        'duration=15s',
+        'duration=15s, reason=help_is_coming',
       );
 
       // Stop after 15 seconds

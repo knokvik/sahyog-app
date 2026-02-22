@@ -80,10 +80,16 @@ class BleScannerService {
       // Start scanning — no service UUID filter, we use manufacturer data
       await FlutterBluePlus.startScan(
         continuousUpdates: true,
-        removeIfGone: const Duration(seconds: 60),
+        removeIfGone: const Duration(seconds: 30),
       );
 
-      SosLog.warn('BLE_SCANNER', 'Scan started — listening for SOS beacons');
+      SosLog.warn(
+        'BLE_SCANNER',
+        'Scan started — listening for Sahyog beacons (0x5348)',
+      );
+
+      // Periodic status log for debugging
+      _startStatusTimer();
     } catch (e) {
       _isScanning = false;
       SosLog.warn('BLE_SCANNER', 'Failed to start scanning: $e');
@@ -98,12 +104,26 @@ class BleScannerService {
       await FlutterBluePlus.stopScan();
     } catch (_) {}
 
+    _statusTimer?.cancel();
+    _statusTimer = null;
     _scanSubscription?.cancel();
     _scanSubscription = null;
     _isScanning = false;
     _processedHashes.clear();
 
     SosLog.warn('BLE_SCANNER', 'Scan stopped');
+  }
+
+  Timer? _statusTimer;
+  void _startStatusTimer() {
+    _statusTimer?.cancel();
+    _statusTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (_isScanning) {
+        SosLog.warn('BLE_SCANNER', 'Still scanning... current status: OK');
+      } else {
+        timer.cancel();
+      }
+    });
   }
 
   /// Process scan results — filter for Sahyog beacons.
