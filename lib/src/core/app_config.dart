@@ -1,14 +1,12 @@
-import 'package:flutter/foundation.dart';
-
 class AppConfig {
   static const _envBaseUrl = String.fromEnvironment('API_BASE_URL');
 
-  // Local Network Server for physical device testing
-  static const productionUrl = 'http://172.25.96.235:3000';
+  // Render Production Server
+  static const productionUrl = 'https://sahyog-uo2y.onrender.com';
 
-  // Android emulator reaches host machine via 10.0.2.2.
-  static const androidBaseUrl = 'http://10.0.2.2:3000';
-  static const iosBaseUrl = 'http://localhost:3000';
+  // Fallbacks for local development if needed, but primary is productionUrl
+  static const androidBaseUrl = 'https://sahyog-uo2y.onrender.com';
+  static const iosBaseUrl = 'https://sahyog-uo2y.onrender.com';
 
   static String get baseUrl {
     if (_envBaseUrl.isNotEmpty) return _envBaseUrl;

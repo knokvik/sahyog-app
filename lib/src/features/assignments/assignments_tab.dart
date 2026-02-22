@@ -121,6 +121,25 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     }
   }
 
+  Future<void> _updateTaskStatus(String taskId, String status) async {
+    try {
+      await widget.api.patch(
+        '/api/v1/tasks/$taskId/status',
+        body: {'status': status},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Task marked as $status')));
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update task: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -341,7 +360,19 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                     fontWeight: isUnassigned ? FontWeight.bold : null,
                   ),
                 ),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: (!isUnassigned && status != 'completed')
+                    ? IconButton(
+                        icon: const Icon(
+                          Icons.check_circle_outline,
+                          color: AppColors.primaryGreen,
+                        ),
+                        tooltip: 'Mark as Done',
+                        onPressed: () => _updateTaskStatus(
+                          (task['id'] ?? '').toString(),
+                          'completed',
+                        ),
+                      )
+                    : const Icon(Icons.chevron_right),
               ),
             );
           }),
