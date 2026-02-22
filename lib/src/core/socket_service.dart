@@ -29,10 +29,15 @@ class SocketService {
     _socket = IO.io(AppConfig.baseUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
+      'path': '/socket.io/', // Explicit path for reliability
+    });
+
+    _socket!.onConnectError((data) {
+      print('Socket Connection Error: $data');
     });
 
     _socket!.onConnect((_) {
-      print('Connected to Real-Time SOS Socket');
+      print('Connected to Real-Time SOS Socket at ${AppConfig.baseUrl}');
     });
 
     _socket!.on('new_sos_alert', (data) {

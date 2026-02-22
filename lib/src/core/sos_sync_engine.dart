@@ -111,7 +111,9 @@ class SosSyncEngine {
       SosLog.warn('SYNC_ENGINE', 'Cycle completed');
       // Only reset to idle if we're not in a terminal state
       final current = syncStatusNotifier.value.phase;
-      if (current != SosSyncPhase.synced && current != SosSyncPhase.failed) {
+      if (current != SosSyncPhase.synced &&
+          current != SosSyncPhase.failed &&
+          current != SosSyncPhase.waitingRetry) {
         syncStatusNotifier.value = SosSyncStatus.idle;
       }
     }

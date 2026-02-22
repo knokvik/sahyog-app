@@ -17,7 +17,6 @@ import '../../core/ble_scanner_service.dart';
 import '../../core/ble_payload_codec.dart';
 import 'mesh_alert_panel.dart';
 import '../../theme/app_colors.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 class UserHomeTab extends StatefulWidget {
   const UserHomeTab({super.key, required this.api, required this.user});
@@ -324,38 +323,10 @@ class _UserHomeTabState extends State<UserHomeTab>
     // 4. Start BLE Mesh advertising immediately (zero-network resilience)
     await BleAdvertiserService.instance.startAdvertising(incident);
 
-    // 4. Check connectivity and attempt immediate sync
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOnline = connectivityResult.any(
-      (r) => r != ConnectivityResult.none,
-    );
-
-    if (!isOnline) {
-      SosLog.event(incident.uuid, 'OFFLINE', 'Queued for background sync');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.wifi_off, color: Colors.white),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'You are offline! SOS saved locally and will broadcast automatically when internet returns.',
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-      return;
-    }
-
-    // 5. Online — trigger immediate sync via engine
-    SosLog.event(incident.uuid, 'ONLINE_IMMEDIATE_SYNC');
+    // 4. Trigger immediate sync via engine
+    // We let the engine's SocketExceptions and backoffs handle true offline scenarios
+    // rather than using connectivity_plus, which can falsely report offline on local networks.
+    SosLog.event(incident.uuid, 'IMMEDIATE_SYNC_ATTEMPT');
     await SosSyncEngine.instance.syncAll();
 
     // Check if sync was successful
