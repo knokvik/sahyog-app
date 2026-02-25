@@ -279,12 +279,29 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                   ),
                   child: Column(
                     children: [
-                      Text(
-                        '$value',
-                        style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          color: Theme.of(context).colorScheme.onSurface,
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 500),
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) {
+                              return SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0.0, 0.5),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                ),
+                              );
+                            },
+                        child: Text(
+                          '$value',
+                          key: ValueKey<int>(value),
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                         ),
                       ),
                       Text(
@@ -328,7 +345,13 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
             children: [
               FlutterMap(
                 mapController: _miniMapController,
-                options: MapOptions(initialCenter: center, initialZoom: 11),
+                options: MapOptions(
+                  initialCenter: center,
+                  initialZoom: 11,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.none,
+                  ),
+                ),
                 children: [
                   TileLayer(
                     urlTemplate:
@@ -359,39 +382,6 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                     }).toList(),
                   ),
                 ],
-              ),
-              Positioned(
-                right: 10,
-                bottom: 10,
-                child: Column(
-                  children: [
-                    FloatingActionButton.small(
-                      heroTag: 'mini_map_zoom_in',
-                      onPressed: () {
-                        _miniMapController.move(
-                          _miniMapController.camera.center,
-                          _miniMapController.camera.zoom + 1,
-                        );
-                      },
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppColors.primaryGreen,
-                      child: const Icon(Icons.add),
-                    ),
-                    const SizedBox(height: 8),
-                    FloatingActionButton.small(
-                      heroTag: 'mini_map_zoom_out',
-                      onPressed: () {
-                        _miniMapController.move(
-                          _miniMapController.camera.center,
-                          _miniMapController.camera.zoom - 1,
-                        );
-                      },
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppColors.primaryGreen,
-                      child: const Icon(Icons.remove),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -473,9 +463,11 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
     final filtered = _searchQuery.isEmpty
         ? _recentSos
         : _recentSos.where((sos) {
-            final vol = (sos['volunteer_name'] ?? '').toString().toLowerCase();
+            final name = (sos['reporter_name'] ?? sos['volunteer_name'] ?? '')
+                .toString()
+                .toLowerCase();
             final status = (sos['status'] ?? '').toString().toLowerCase();
-            return vol.contains(_searchQuery.toLowerCase()) ||
+            return name.contains(_searchQuery.toLowerCase()) ||
                 status.contains(_searchQuery.toLowerCase());
           }).toList();
 
@@ -497,35 +489,47 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
             else
               ...filtered.map((sos) {
                 final status = (sos['status'] ?? 'triggered').toString();
-                final vol = (sos['volunteer_name'] ?? 'Unknown').toString();
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.criticalRed,
+                final name =
+                    (sos['reporter_name'] ?? sos['volunteer_name'] ?? 'Unknown')
+                        .toString();
+                return InkWell(
+                  onTap: () {
+                    // Navigate to map tab
+                    widget.onNavigate(1);
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.criticalRed,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          vol,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
                         ),
-                      ),
-                      Text(
-                        status.toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold,
+                        Text(
+                          status.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               }),
