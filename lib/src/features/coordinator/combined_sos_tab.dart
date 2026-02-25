@@ -108,15 +108,15 @@ class _CombinedSosTabState extends State<CombinedSosTab> {
         children: [
           const TabBar(
             tabs: [
-              Tab(text: 'SOS Alerts'),
               Tab(text: 'Missing Persons'),
+              Tab(text: 'SOS Alerts'),
             ],
           ),
           Expanded(
             child: TabBarView(
               children: [
-                _buildSosTab(),
                 MissingTab(api: widget.api),
+                _buildSosTab(),
               ],
             ),
           ),
