@@ -457,29 +457,58 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-            Container(
-              color: Theme.of(context).cardColor,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  _LegendDot(color: AppColors.criticalRed, label: 'Red Zone'),
-                  const SizedBox(width: 12),
-                  _LegendDot(
-                    color: AppColors.warningAmber,
-                    label: 'Yellow Zone',
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        top: 12,
+                        bottom: 84,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor.withOpacity(0.95),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, -4),
+                          ),
+                        ],
+                      ),
+                      child: Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.start,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const _LegendDot(
+                            color: AppColors.criticalRed,
+                            label: 'Red Zone',
+                          ),
+                          const _LegendDot(
+                            color: AppColors.warningAmber,
+                            label: 'Yellow Zone',
+                          ),
+                          const _LegendDot(
+                            color: AppColors.infoBlue,
+                            label: 'Blue Zone',
+                          ),
+                          const _LegendDot(
+                            color: AppColors.criticalRed,
+                            label: 'SOS Alert',
+                          ),
+                          const _LegendDot(
+                            color: AppColors.primaryGreen,
+                            label: 'User Marked',
+                          ),
+                          Text('Resources/SOS: ${_resources.length}'),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 12),
-                  _LegendDot(color: AppColors.infoBlue, label: 'Blue Zone'),
-                  _LegendDot(color: AppColors.criticalRed, label: 'SOS Alert'),
-                  _LegendDot(
-                    color: AppColors.primaryGreen,
-                    label: 'User Marked',
-                  ),
-                  const Spacer(),
-                  Text('Resources/SOS: ${_resources.length}'),
                 ],
               ),
             ),
