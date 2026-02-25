@@ -29,6 +29,7 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
   String _error = '';
   List<Map<String, dynamic>> _zones = [];
   List<Map<String, dynamic>> _recentTasks = [];
+  List<Map<String, dynamic>> _recentSos = [];
   Timer? _pollTimer;
 
   @override
@@ -110,11 +111,20 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
         } catch (_) {}
       }
 
+      List<Map<String, dynamic>> recentSos = [];
+      try {
+        final sosRaw = await widget.api.get('/api/v1/sos');
+        if (sosRaw is List) {
+          recentSos = sosRaw.cast<Map<String, dynamic>>().take(3).toList();
+        }
+      } catch (_) {}
+
       if (!mounted) return;
       setState(() {
         _position = pos;
         _zones = zones;
         _recentTasks = recentTasks.take(5).toList();
+        _recentSos = recentSos;
         _loading = false;
       });
     } catch (e) {
@@ -146,9 +156,14 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
           const SizedBox(height: 16),
           if (_error.isNotEmpty)
             Text(_error, style: const TextStyle(color: AppColors.criticalRed)),
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(height: 200, child: _buildMiniMap()),
+          GestureDetector(
+            onTap: () {
+              DefaultTabController.of(context).animateTo(1);
+            },
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(height: 200, child: _buildMiniMap()),
+            ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -184,10 +199,57 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: Chip(label: Text(status.toUpperCase())),
+                  trailing: Chip(
+                    label: Text(
+                      status.toUpperCase(),
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
                 ),
               );
             }),
+          const SizedBox(height: 16),
+          Text(
+            'Recent SOS',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          if (_recentSos.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No recent SOS found.'),
+              ),
+            )
+          else
+            ..._recentSos.map((sos) {
+              final status = (sos['status'] ?? 'active').toString();
+              return Card(
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AppColors.criticalRed,
+                    foregroundColor: Colors.white,
+                    child: Icon(Icons.sos),
+                  ),
+                  title: Text(
+                    (sos['reporter_name'] ?? sos['volunteer_name'] ?? 'Unknown')
+                        .toString(),
+                  ),
+                  trailing: Chip(
+                    label: Text(
+                      status.toUpperCase(),
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+                  onTap: () {
+                    DefaultTabController.of(context).animateTo(1);
+                  },
+                ),
+              );
+            }),
+          const SizedBox(height: 32),
         ],
       ),
     );
@@ -207,7 +269,13 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
       children: [
         FlutterMap(
           mapController: _miniMapController,
-          options: MapOptions(initialCenter: center, initialZoom: 12),
+          options: MapOptions(
+            initialCenter: center,
+            initialZoom: 12,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.none,
+            ),
+          ),
           children: [
             TileLayer(
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -249,39 +317,6 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
               }).toList(),
             ),
           ],
-        ),
-        Positioned(
-          right: 10,
-          bottom: 10,
-          child: Column(
-            children: [
-              FloatingActionButton.small(
-                heroTag: 'home_mini_map_zoom_in',
-                onPressed: () {
-                  _miniMapController.move(
-                    _miniMapController.camera.center,
-                    _miniMapController.camera.zoom + 1,
-                  );
-                },
-                backgroundColor: Colors.white,
-                foregroundColor: AppColors.primaryGreen,
-                child: const Icon(Icons.add),
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton.small(
-                heroTag: 'home_mini_map_zoom_out',
-                onPressed: () {
-                  _miniMapController.move(
-                    _miniMapController.camera.center,
-                    _miniMapController.camera.zoom - 1,
-                  );
-                },
-                backgroundColor: Colors.white,
-                foregroundColor: AppColors.primaryGreen,
-                child: const Icon(Icons.remove),
-              ),
-            ],
-          ),
         ),
       ],
     );
