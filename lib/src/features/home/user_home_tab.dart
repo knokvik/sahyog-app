@@ -12,9 +12,6 @@ import '../../core/socket_service.dart';
 import '../../core/database_helper.dart';
 import '../../core/sos_state_machine.dart';
 import '../../core/sos_sync_engine.dart';
-import '../../core/ble_advertiser_service.dart';
-import '../../core/ble_scanner_service.dart';
-import '../../core/ble_payload_codec.dart';
 import '../../theme/app_colors.dart';
 
 class UserHomeTab extends StatefulWidget {
@@ -43,10 +40,6 @@ class _UserHomeTabState extends State<UserHomeTab>
   String? _activeSosId;
   String? _activeLocalUuid; // UUID of the active local SOS incident
 
-  // Track detected mesh beacons
-  BleBeacon? _detectedBeacon;
-  String _detectedDistance = '';
-
   // Track global SOS from sockets: {id: LatLng}
   final Map<String, LatLng> _globalActiveSos = {};
 
@@ -63,15 +56,6 @@ class _UserHomeTabState extends State<UserHomeTab>
     SocketService.instance.onSosResolved.addListener(_onRemoteSosResolved);
     SosSyncEngine.instance.syncCompletionNotifier.addListener(
       _onBackgroundSyncComplete,
-    );
-    BleAdvertiserService.instance.ackReceivedNotifier.addListener(
-      _onBleAckReceived,
-    );
-    BleScannerService.instance.beaconDetectedNotifier.addListener(
-      _onMeshBeaconDetected,
-    );
-    BleScannerService.instance.distanceNotifier.addListener(
-      _onMeshDistanceUpdated,
     );
   }
 
@@ -140,71 +124,6 @@ class _UserHomeTabState extends State<UserHomeTab>
     });
   }
 
-  void _onBleAckReceived() async {
-    final uuidHash = BleAdvertiserService.instance.ackReceivedNotifier.value;
-    if (uuidHash == null || _activeLocalUuid == null) return;
-
-    final db = DatabaseHelper.instance;
-    final incident = await db.getIncidentByUuid(_activeLocalUuid!);
-    if (incident != null && incident.uuidHash == uuidHash) {
-      if (SosStateMachine.canTransition(
-        incident.status,
-        SosStatus.acknowledged,
-      )) {
-        await db.atomicUpdateIncident(
-          incident.uuid,
-          status: SosStatus.acknowledged,
-        );
-        SosLog.event(
-          incident.uuid,
-          'ACK_VIA_BLE',
-          'Mesh responder help coming',
-        );
-
-        // Stop advertiser since we're acknowledged
-        await BleAdvertiserService.instance.stopAdvertising(
-          reason: 'ack_received',
-        );
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Help is on the way! (Received via BLE Mesh)'),
-              backgroundColor: AppColors.primaryGreen,
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  void _onMeshBeaconDetected() {
-    final beacon = BleScannerService.instance.beaconDetectedNotifier.value;
-    if (beacon != null && mounted) {
-      setState(() {
-        _detectedBeacon = beacon;
-        _detectedDistance =
-            BleScannerService.instance.distanceNotifier.value[beacon
-                .uuidHash] ??
-            'Nearby';
-      });
-    }
-  }
-
-  void _onMeshDistanceUpdated() {
-    if (_detectedBeacon != null && mounted) {
-      final distance = BleScannerService
-          .instance
-          .distanceNotifier
-          .value[_detectedBeacon!.uuidHash];
-      if (distance != null && distance != _detectedDistance) {
-        setState(() {
-          _detectedDistance = distance;
-        });
-      }
-    }
-  }
-
   @override
   void dispose() {
     _pollTimer?.cancel();
@@ -213,15 +132,6 @@ class _UserHomeTabState extends State<UserHomeTab>
     SocketService.instance.onSosResolved.removeListener(_onRemoteSosResolved);
     SosSyncEngine.instance.syncCompletionNotifier.removeListener(
       _onBackgroundSyncComplete,
-    );
-    BleAdvertiserService.instance.ackReceivedNotifier.removeListener(
-      _onBleAckReceived,
-    );
-    BleScannerService.instance.beaconDetectedNotifier.removeListener(
-      _onMeshBeaconDetected,
-    );
-    BleScannerService.instance.distanceNotifier.removeListener(
-      _onMeshDistanceUpdated,
     );
     super.dispose();
   }
@@ -319,9 +229,6 @@ class _UserHomeTabState extends State<UserHomeTab>
       _sosFired = true;
     });
 
-    // 4. Start BLE Mesh advertising immediately (zero-network resilience)
-    await BleAdvertiserService.instance.startAdvertising(incident);
-
     // 4. Trigger immediate sync via engine
     // We let the engine's SocketExceptions and backoffs handle true offline scenarios
     // rather than using connectivity_plus, which can falsely report offline on local networks.
@@ -385,12 +292,6 @@ class _UserHomeTabState extends State<UserHomeTab>
     if (uuidToCancel != null) {
       await db.atomicUpdateIncident(uuidToCancel, status: SosStatus.cancelled);
       SosLog.event(uuidToCancel, 'CANCEL_SQLITE', 'status=cancelled');
-
-      // ── Stop BLE / Send Cancel Beacon ──
-      final incident = await db.getIncidentByUuid(uuidToCancel);
-      if (incident != null) {
-        await BleAdvertiserService.instance.emitCancelBeacon(incident);
-      }
     }
 
     // ── Case 1: Has backend ID — cancel on server ──

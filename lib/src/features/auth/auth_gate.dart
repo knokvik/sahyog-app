@@ -13,7 +13,6 @@ import '../../core/models.dart';
 import '../../theme/app_colors.dart';
 import '../../core/connectivity_service.dart';
 import '../../core/socket_service.dart';
-import '../../core/ble_scanner_service.dart';
 import '../assignments/assignments_tab.dart';
 import '../coordinator/coordinator_dashboard_tab.dart';
 import '../coordinator/coordinator_operations_tab.dart';
@@ -23,6 +22,7 @@ import '../home/user_home_tab.dart';
 import '../home/global_sos_indicator.dart';
 import '../map/map_tab.dart';
 import '../missing/missing_tab.dart';
+import '../../core/draggable_sos_wrapper.dart';
 import '../notifications/notifications_tab.dart';
 import '../profile/profile_tab.dart';
 import 'user_profile_completion_screen.dart';
@@ -114,10 +114,6 @@ class _AuthGateState extends State<AuthGate> {
         context,
         user.isCoordinator || user.isAdmin,
       );
-
-      // Initialize BLE Mesh scanner for everyone (all users can relay)
-      BleScannerService.instance.initialize(_api, user.id);
-      BleScannerService.instance.startScanning();
 
       // Save to cache
       await prefs.setString('cached_user', jsonEncode(user.toJson()));
@@ -379,7 +375,7 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
       ),
     ];
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         titleSpacing: 24,
         title: Row(
@@ -427,12 +423,6 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
         duration: const Duration(milliseconds: 300),
         child: tabs[_index],
       ),
-      floatingActionButton: GlobalSosIndicator(
-        user: widget.user,
-        onTap: () {
-          setState(() => _index = 2); // Switch to SOS Tab
-        },
-      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),
@@ -464,6 +454,21 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
           ),
         ],
       ),
+    );
+
+    return Stack(
+      children: [
+        scaffold,
+        DraggableSosWrapper(
+          child: GlobalSosIndicator(
+            user: widget.user,
+            api: widget.api,
+            onTap: () {
+              setState(() => _index = 2); // Switch to SOS Tab
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -527,7 +532,7 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
       ),
     ];
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         titleSpacing: 24, // spacing horizontally for header
         title: Row(
@@ -575,12 +580,6 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
         duration: const Duration(milliseconds: 300),
         child: tabs[_index],
       ),
-      floatingActionButton: GlobalSosIndicator(
-        user: widget.user,
-        onTap: () {
-          setState(() => _index = 3); // Switch to SOS Tab
-        },
-      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),
@@ -612,6 +611,21 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
           ),
         ],
       ),
+    );
+
+    return Stack(
+      children: [
+        scaffold,
+        DraggableSosWrapper(
+          child: GlobalSosIndicator(
+            user: widget.user,
+            api: widget.api,
+            onTap: () {
+              setState(() => _index = 3); // Switch to SOS Tab
+            },
+          ),
+        ),
+      ],
     );
   }
 }

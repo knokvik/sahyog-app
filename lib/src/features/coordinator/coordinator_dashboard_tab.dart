@@ -100,55 +100,6 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
     }
   }
 
-  Future<void> _fetchAndShowLatestSos() async {
-    try {
-      final raw = await widget.api.get('/api/v1/coordinator/sos');
-      final list = (raw is List)
-          ? raw.cast<Map<String, dynamic>>()
-          : <Map<String, dynamic>>[];
-      if (list.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No active SOS alerts found.')),
-        );
-        return;
-      }
-      final latest = list.first;
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text(
-            '🆘 Emergency Alert',
-            style: TextStyle(color: AppColors.criticalRed),
-          ),
-          content: Text(
-            'Latest SOS from: ${latest['volunteer_name'] ?? 'Unknown'}\nStatus: ${(latest['status'] ?? '').toString().toUpperCase()}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                widget.onNavigate(3);
-              },
-              child: const Text('View All'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to check SOS: $e')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -181,10 +132,6 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
             ),
           ),
         ],
-      ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(right: 12.0),
-        child: AnimatedSosButton(onTrigger: _fetchAndShowLatestSos),
       ),
     );
   }
@@ -257,20 +204,20 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
       ('SOS', _recentSos.length, Icons.sos, AppColors.criticalRed, 3),
     ];
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: items.map((item) {
           final (label, value, _, color, tabIndex) = item;
-          return SizedBox(
-            width: 110,
+          return Expanded(
             child: InkWell(
               onTap: () => widget.onNavigate(tabIndex),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(16),
               child: Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(16),
                   side: BorderSide(
                     color: Colors.grey.withValues(alpha: 0.3),
                     width: 1,
@@ -278,8 +225,8 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 8,
+                    vertical: 12,
+                    horizontal: 4,
                   ),
                   child: Column(
                     children: [
@@ -302,7 +249,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                           '$value',
                           key: ValueKey<int>(value),
                           style: TextStyle(
-                            fontSize: 34,
+                            fontSize: 24, // Reduced font size to fit
                             fontWeight: FontWeight.w800,
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
@@ -311,11 +258,12 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                       Text(
                         label,
                         style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 10, // Reduced font size to fit
                           fontWeight: FontWeight.w600,
                           color: Colors.grey,
                         ),
                         maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -552,85 +500,5 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
       default:
         return AppColors.criticalRed;
     }
-  }
-}
-
-class AnimatedSosButton extends StatefulWidget {
-  final VoidCallback onTrigger;
-  const AnimatedSosButton({super.key, required this.onTrigger});
-
-  @override
-  State<AnimatedSosButton> createState() => _AnimatedSosButtonState();
-}
-
-class _AnimatedSosButtonState extends State<AnimatedSosButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  bool _isPressed = false;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _onPanDown(_) {
-    setState(() => _isPressed = true);
-    _timer = Timer(const Duration(seconds: 3), () {
-      widget.onTrigger();
-      setState(() => _isPressed = false);
-    });
-  }
-
-  void _onPanCancel() {
-    setState(() => _isPressed = false);
-    _timer?.cancel();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanDown: _onPanDown,
-      onPanCancel: _onPanCancel,
-      onPanEnd: (_) => _onPanCancel(),
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          final scale = _isPressed ? 1.1 : 1.0 + (_controller.value * 0.1);
-          return Transform.scale(
-            scale: scale,
-            child: Container(
-              width: 65,
-              height: 65,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.criticalRed,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.criticalRed.withValues(
-                      alpha: 0.5 * _controller.value,
-                    ),
-                    blurRadius: 15 * _controller.value,
-                    spreadRadius: 10 * _controller.value,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.sos, color: Colors.white, size: 32),
-            ),
-          );
-        },
-      ),
-    );
   }
 }

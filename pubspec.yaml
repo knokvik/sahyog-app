@@ -47,8 +47,6 @@ dependencies:
   socket_io_client: ^3.1.4
   shared_preferences: ^2.5.3
   uuid: ^4.5.1
-  flutter_ble_peripheral: ^2.1.0
-  flutter_blue_plus: ^1.35.0
   flutter_foreground_task: ^8.0.0
   battery_plus: ^6.1.1
 
