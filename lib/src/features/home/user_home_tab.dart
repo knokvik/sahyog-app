@@ -15,7 +15,6 @@ import '../../core/sos_sync_engine.dart';
 import '../../core/ble_advertiser_service.dart';
 import '../../core/ble_scanner_service.dart';
 import '../../core/ble_payload_codec.dart';
-import 'mesh_alert_panel.dart';
 import '../../theme/app_colors.dart';
 
 class UserHomeTab extends StatefulWidget {
@@ -522,37 +521,6 @@ class _UserHomeTabState extends State<UserHomeTab>
               const SizedBox(height: 32),
             ],
           ),
-          if (_detectedBeacon != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: MeshAlertPanel(
-                beacon: _detectedBeacon!,
-                distance: _detectedDistance,
-                onRespond: () {
-                  BleScannerService.instance.sendAckBeacon(
-                    _detectedBeacon!.uuidHash,
-                  );
-                  setState(() {
-                    _detectedBeacon = null;
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Relay started! Acknowledgment sent via BLE.',
-                      ),
-                      backgroundColor: AppColors.primaryGreen,
-                    ),
-                  );
-                },
-                onDismiss: () {
-                  setState(() {
-                    _detectedBeacon = null;
-                  });
-                },
-              ),
-            ),
         ],
       ),
     );
