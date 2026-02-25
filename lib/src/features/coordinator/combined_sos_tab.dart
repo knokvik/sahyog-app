@@ -164,21 +164,21 @@ class _CombinedSosTabState extends State<CombinedSosTab> {
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
-                elevation: isActive ? 6 : 1,
+                elevation: isActive ? 2 : 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                   side: BorderSide(
                     color: isActive
-                        ? AppColors.criticalRed
-                        : Colors.transparent,
-                    width: isActive ? 2 : 0,
+                        ? AppColors.criticalRed.withOpacity(0.3)
+                        : Colors.grey.withOpacity(0.2),
+                    width: 1,
                   ),
                 ),
                 child: Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     color: isActive
-                        ? AppColors.criticalRed.withOpacity(0.06)
+                        ? AppColors.criticalRed.withOpacity(0.04)
                         : null,
                   ),
                   child: Padding(
@@ -261,37 +261,80 @@ class _CombinedSosTabState extends State<CombinedSosTab> {
                             child: Text('📎 Has media attachments'),
                           ),
                         const SizedBox(height: 8),
-                        if (widget.user.isCoordinator)
+                        if (widget.user.isCoordinator ||
+                            widget.user.isVolunteer)
                           Wrap(
                             spacing: 8,
                             children: [
                               OutlinedButton(
-                                onPressed: id.isEmpty
+                                onPressed:
+                                    id.isEmpty ||
+                                        status == 'acknowledged' ||
+                                        status == 'resolved'
                                     ? null
                                     : () => _updateStatus(id, 'acknowledged'),
-                                child: const Text('Acknowledge'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 0,
+                                  ),
+                                  minimumSize: const Size(0, 32),
+                                  side: BorderSide(
+                                    color: Colors.blue.withOpacity(0.5),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Acknowledge',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                               FilledButton.tonal(
-                                onPressed: id.isEmpty
+                                onPressed: id.isEmpty || status == 'resolved'
                                     ? null
                                     : () => _updateStatus(id, 'resolved'),
                                 style: isActive
                                     ? FilledButton.styleFrom(
-                                        backgroundColor: AppColors.criticalRed,
+                                        backgroundColor: AppColors.criticalRed
+                                            .withOpacity(0.8),
                                         foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 0,
+                                        ),
+                                        minimumSize: const Size(0, 32),
                                       )
-                                    : null,
-                                child: const Text('Resolve'),
+                                    : FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 0,
+                                        ),
+                                        minimumSize: const Size(0, 32),
+                                      ),
+                                child: const Text(
+                                  'Resolve',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
                             ],
                           )
                         else if (status == 'triggered')
                           OutlinedButton.icon(
                             onPressed: () => _updateStatus(id, 'cancelled'),
-                            icon: const Icon(Icons.cancel, size: 18),
-                            label: const Text('Cancel Request'),
+                            icon: const Icon(Icons.cancel, size: 16),
+                            label: const Text(
+                              'Cancel Request',
+                              style: TextStyle(fontSize: 12),
+                            ),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.red,
+                              foregroundColor: Colors.red.withOpacity(0.8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 0,
+                              ),
+                              minimumSize: const Size(0, 32),
+                              side: BorderSide(
+                                color: Colors.red.withOpacity(0.3),
+                              ),
                             ),
                           ),
                       ],
