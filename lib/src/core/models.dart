@@ -84,6 +84,36 @@ class AppUser {
       phone: json['phone']?.toString(),
     );
   }
+
+  factory AppUser.fromJson(Map<String, dynamic> json) {
+    return AppUser(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      email: json['email'] as String,
+      role: json['role'] as String,
+      organizationId: json['organizationId'] as String?,
+      isActive: json['isActive'] as bool? ?? true,
+      bloodGroup: json['bloodGroup'] as String?,
+      medicalHistory: json['medicalHistory'] as String?,
+      address: json['address'] as String?,
+      phone: json['phone'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'role': role,
+      'organizationId': organizationId,
+      'isActive': isActive,
+      'bloodGroup': bloodGroup,
+      'medicalHistory': medicalHistory,
+      'address': address,
+      'phone': phone,
+    };
+  }
 }
 
 String normalizeRole(String rawRole) {

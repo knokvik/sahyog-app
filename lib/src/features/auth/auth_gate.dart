@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 import '../../core/api_client.dart';
 import '../../core/app_config.dart';
@@ -65,10 +67,23 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _bootstrap() async {
     try {
-      setState(() {
-        _loading = true;
-        _error = '';
-      });
+      final prefs = await SharedPreferences.getInstance();
+      final cachedStr = prefs.getString('cached_user');
+
+      if (cachedStr != null) {
+        try {
+          final cachedUser = AppUser.fromJson(jsonDecode(cachedStr));
+          setState(() {
+            _user = cachedUser;
+            _loading = false;
+          });
+        } catch (_) {}
+      } else {
+        setState(() {
+          _loading = true;
+          _error = '';
+        });
+      }
 
       final syncRaw = await _api.post('/api/auth/sync');
       if (syncRaw is! Map<String, dynamic> ||
@@ -103,6 +118,9 @@ class _AuthGateState extends State<AuthGate> {
       // Initialize BLE Mesh scanner for everyone (all users can relay)
       BleScannerService.instance.initialize(_api, user.id);
       BleScannerService.instance.startScanning();
+
+      // Save to cache
+      await prefs.setString('cached_user', jsonEncode(user.toJson()));
 
       setState(() {
         _user = user;
