@@ -1,11 +1,22 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/socket_service.dart';
+import '../../core/sos_sync_engine.dart';
+import '../../core/database_helper.dart';
+import '../../core/sos_state_machine.dart';
+import '../../core/models.dart';
+import '../../core/location_service.dart';
 import '../../theme/app_colors.dart';
 
 class GlobalSosIndicator extends StatefulWidget {
-  const GlobalSosIndicator({super.key, required this.onTap});
+  const GlobalSosIndicator({
+    super.key,
+    required this.onTap,
+    required this.user,
+  });
 
   final VoidCallback onTap;
+  final AppUser user;
 
   @override
   State<GlobalSosIndicator> createState() => _GlobalSosIndicatorState();
@@ -36,9 +47,83 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
     ).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeOut));
   }
 
+  // ── SOS Triggering Logic ──
+  int _sosHoldTicks = 0;
+  Timer? _sosHoldTimer;
+  bool _sosFired = false;
+  final LocationService _locationService = LocationService();
+
+  Future<void> _triggerSOS() async {
+    final db = DatabaseHelper.instance;
+
+    // Prevent double-trigger: check if already active
+    final existing = await db.getActiveIncident(widget.user.id);
+    if (existing != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('SOS Aleady Active!'),
+            backgroundColor: AppColors.warningAmber,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 1. Fetch location (12s timeout)
+    double? lat, lng;
+    try {
+      final pos = await _locationService.getCurrentPosition().timeout(
+        const Duration(seconds: 12),
+      );
+      lat = pos.latitude;
+      lng = pos.longitude;
+    } catch (_) {}
+
+    // 2. Create SOS incident
+    final incident = SosIncident(
+      reporterId: widget.user.id,
+      lat: lat,
+      lng: lng,
+      type: 'Emergency',
+      status: SosStatus.activating,
+    );
+
+    // 3. Save to SQLite -> transition offline
+    await db.insertSosIncident(incident);
+    await db.atomicUpdateIncident(
+      incident.uuid,
+      status: SosStatus.activeOffline,
+    );
+
+    // 4. Force a network sync
+    SosSyncEngine.instance.syncAll();
+
+    if (mounted) {
+      // Navigate to the SOS Home tab
+      widget.onTap();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS Requested! Navigating to SOS Panel...'),
+          backgroundColor: AppColors.criticalRed,
+        ),
+      );
+    }
+  }
+
+  void _cancelHold() {
+    _sosHoldTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _sosHoldTicks = 0;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _pulseController.dispose();
+    _sosHoldTimer?.cancel();
     super.dispose();
   }
 
@@ -225,34 +310,71 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
     return ValueListenableBuilder<Map<String, Map<String, dynamic>>>(
       valueListenable: SocketService.instance.liveSosAlerts,
       builder: (context, alerts, _) {
-        if (alerts.isEmpty) return const SizedBox.shrink();
-
         final count = alerts.length;
+        final double progress = (_sosHoldTicks / 50.0).clamp(0.0, 1.0);
 
         return GestureDetector(
-          onTap: () => _handleTap(context, alerts),
+          onTap: () {
+            if (count > 0) {
+              _handleTap(context, alerts);
+            } else {
+              widget.onTap();
+            }
+          },
+          onTapDown: (_) {
+            if (_sosFired) return;
+            _sosHoldTicks = 0;
+            _sosHoldTimer = Timer.periodic(const Duration(milliseconds: 100), (
+              timer,
+            ) {
+              if (!mounted) return;
+              setState(() {
+                _sosHoldTicks++;
+                if (_sosHoldTicks >= 50) {
+                  _sosHoldTimer?.cancel();
+                  _sosFired = true;
+                  _triggerSOS();
+                }
+              });
+            });
+          },
+          onTapUp: (_) => _cancelHold(),
+          onTapCancel: () => _cancelHold(),
           child: SizedBox(
             width: 70,
             height: 70,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Pulse waves
-                AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    return Container(
-                      width: 50 * _scaleAnimation.value,
-                      height: 50 * _scaleAnimation.value,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.criticalRed.withOpacity(
-                          _fadeAnimation.value,
+                // Pulse waves (only when alerts exist)
+                if (count > 0)
+                  AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) {
+                      return Container(
+                        width: 50 * _scaleAnimation.value,
+                        height: 50 * _scaleAnimation.value,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.criticalRed.withOpacity(
+                            _fadeAnimation.value,
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
+                // Progress Fill for HOLD Action
+                if (_sosHoldTicks > 0)
+                  SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 4,
+                      color: AppColors.primaryGreen,
+                      backgroundColor: Colors.transparent,
+                    ),
+                  ),
                 // Main Button
                 Container(
                   width: 56,
@@ -273,10 +395,10 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
                     children: [
                       const Icon(Icons.sos, color: Colors.white, size: 24),
                       Text(
-                        '$count',
-                        style: const TextStyle(
+                        count > 0 ? '$count' : 'SOS',
+                        style: TextStyle(
                           color: Colors.white,
-                          fontSize: 11,
+                          fontSize: count > 0 ? 11 : 10,
                           fontWeight: FontWeight.w900,
                         ),
                       ),

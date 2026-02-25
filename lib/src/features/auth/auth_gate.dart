@@ -428,6 +428,7 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
         child: tabs[_index],
       ),
       floatingActionButton: GlobalSosIndicator(
+        user: widget.user,
         onTap: () {
           setState(() => _index = 2); // Switch to SOS Tab
         },
@@ -575,6 +576,7 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
         child: tabs[_index],
       ),
       floatingActionButton: GlobalSosIndicator(
+        user: widget.user,
         onTap: () {
           setState(() => _index = 3); // Switch to SOS Tab
         },

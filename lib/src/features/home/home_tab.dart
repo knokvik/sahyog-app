@@ -142,116 +142,125 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const SizedBox(height: 8),
-          _RoleChip(role: widget.user.role),
-          const SizedBox(height: 16),
-          if (_error.isNotEmpty)
-            Text(_error, style: const TextStyle(color: AppColors.criticalRed)),
-          GestureDetector(
-            onTap: () {
-              DefaultTabController.of(context).animateTo(1);
-            },
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              child: SizedBox(height: 200, child: _buildMiniMap()),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Recent Tasks',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          if (_recentTasks.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No recent tasks found.'),
-              ),
-            )
-          else
-            ..._recentTasks.map((task) {
-              final title = (task['title'] ?? task['type'] ?? 'Task')
-                  .toString();
-              final status = (task['status'] ?? 'pending').toString();
-              final desc = (task['description'] ?? '').toString();
-              return Card(
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: AppColors.primaryGreen,
-                    foregroundColor: Colors.white,
-                    child: Icon(Icons.assignment_turned_in),
+    return Column(
+      children: [
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const SizedBox(height: 8),
+                _RoleChip(role: widget.user.role),
+                const SizedBox(height: 16),
+                if (_error.isNotEmpty)
+                  Text(
+                    _error,
+                    style: const TextStyle(color: AppColors.criticalRed),
                   ),
-                  title: Text(title),
-                  subtitle: Text(
-                    desc.isEmpty ? 'No description' : desc,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: Chip(
-                    label: Text(
-                      status.toUpperCase(),
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          const SizedBox(height: 16),
-          Text(
-            'Recent SOS',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          if (_recentSos.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No recent SOS found.'),
-              ),
-            )
-          else
-            ..._recentSos.map((sos) {
-              final status = (sos['status'] ?? 'active').toString();
-              return Card(
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: AppColors.criticalRed,
-                    foregroundColor: Colors.white,
-                    child: Icon(Icons.sos),
-                  ),
-                  title: Text(
-                    (sos['reporter_name'] ?? sos['volunteer_name'] ?? 'Unknown')
-                        .toString(),
-                  ),
-                  trailing: Chip(
-                    label: Text(
-                      status.toUpperCase(),
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                  ),
+                GestureDetector(
                   onTap: () {
                     DefaultTabController.of(context).animateTo(1);
                   },
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: SizedBox(height: 200, child: _buildMiniMap()),
+                  ),
                 ),
-              );
-            }),
-          const SizedBox(height: 32),
-        ],
-      ),
+                const SizedBox(height: 12),
+                Text(
+                  'Recent Tasks',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                if (_recentTasks.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('No recent tasks found.'),
+                    ),
+                  )
+                else
+                  ..._recentTasks.map((task) {
+                    final title = (task['title'] ?? task['type'] ?? 'Task')
+                        .toString();
+                    final status = (task['status'] ?? 'pending').toString();
+                    final desc = (task['description'] ?? '').toString();
+                    return Card(
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: AppColors.primaryGreen,
+                          foregroundColor: Colors.white,
+                          child: Icon(Icons.assignment_turned_in),
+                        ),
+                        title: Text(title),
+                        subtitle: Text(
+                          desc.isEmpty ? 'No description' : desc,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Chip(
+                          label: Text(
+                            status.toUpperCase(),
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 16),
+                Text(
+                  'Recent SOS',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                if (_recentSos.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('No recent SOS found.'),
+                    ),
+                  )
+                else
+                  ..._recentSos.map((sos) {
+                    final status = (sos['status'] ?? 'active').toString();
+                    return Card(
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: AppColors.criticalRed,
+                          foregroundColor: Colors.white,
+                          child: Icon(Icons.sos),
+                        ),
+                        title: Text(
+                          (sos['reporter_name'] ??
+                                  sos['volunteer_name'] ??
+                                  'Unknown')
+                              .toString(),
+                        ),
+                        trailing: Chip(
+                          label: Text(
+                            status.toUpperCase(),
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        onTap: () {
+                          DefaultTabController.of(context).animateTo(1);
+                        },
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 32),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

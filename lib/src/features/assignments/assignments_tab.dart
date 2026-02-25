@@ -142,10 +142,6 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     if (!widget.user.isVolunteer && !widget.user.isCoordinator) {
       return const Center(
         child: Padding(
@@ -168,6 +164,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 Tab(text: 'History'),
               ],
             ),
+            if (_loading) const LinearProgressIndicator(minHeight: 2),
             if (_error.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -205,23 +202,33 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Coordinator Needs Dashboard',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+    return Column(
+      children: [
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  'Coordinator Needs Dashboard',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                if (_error.isNotEmpty)
+                  Text(
+                    _error,
+                    style: const TextStyle(color: AppColors.criticalRed),
+                  ),
+                _buildCoordinatorNeeds(),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          if (_error.isNotEmpty)
-            Text(_error, style: const TextStyle(color: AppColors.criticalRed)),
-          _buildCoordinatorNeeds(),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

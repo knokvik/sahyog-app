@@ -151,32 +151,36 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 10),
-            if (_error.isNotEmpty)
-              Text(
-                _error,
-                style: const TextStyle(color: AppColors.criticalRed),
+      body: Column(
+        children: [
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 10),
+                  if (_error.isNotEmpty)
+                    Text(
+                      _error,
+                      style: const TextStyle(color: AppColors.criticalRed),
+                    ),
+                  _buildMiniMap(),
+                  const SizedBox(height: 12),
+                  _buildStatsRow(),
+                  const SizedBox(height: 12),
+                  _buildRecentTasks(),
+                  const SizedBox(height: 12),
+                  _buildRecentSos(),
+                  const SizedBox(height: 80), // Padding for FAB
+                ],
               ),
-            _buildMiniMap(),
-            const SizedBox(height: 12),
-            _buildStatsRow(),
-            const SizedBox(height: 12),
-            _buildRecentTasks(),
-            const SizedBox(height: 12),
-            _buildRecentSos(),
-            const SizedBox(height: 80), // Padding for FAB
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(right: 12.0),

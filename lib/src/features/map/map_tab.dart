@@ -199,10 +199,8 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
 
+    // Keep map in memory, let FlutterMap's tile loader pull cached layers
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -369,7 +367,7 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                   ),
                   Positioned(
                     right: 16,
-                    bottom: 60, // moved up to avoid overlapping with FAB
+                    bottom: 90, // moved up to avoid overlapping with FAB
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -458,55 +456,136 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                     ),
                   ),
                   Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        top: 12,
-                        bottom: 84,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor.withOpacity(0.95),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, -4),
+                    bottom: 24,
+                    left: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_loading)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryGreen,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Row(
+                              children: [
+                                SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Loading markers...',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
-                      child: Wrap(
-                        spacing: 12,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.start,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          const _LegendDot(
-                            color: AppColors.criticalRed,
-                            label: 'Red Zone',
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).cardColor.withOpacity(0.95),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          const _LegendDot(
-                            color: AppColors.warningAmber,
-                            label: 'Yellow Zone',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'ZONES',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  _CompactDot(
+                                    color: AppColors.criticalRed,
+                                    label: 'Red',
+                                  ),
+                                  const SizedBox(width: 12),
+                                  _CompactDot(
+                                    color: AppColors.warningAmber,
+                                    label: 'Yellow',
+                                  ),
+                                  const SizedBox(width: 12),
+                                  _CompactDot(
+                                    color: AppColors.infoBlue,
+                                    label: 'Blue',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'MARKERS',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  _CompactDot(
+                                    color: AppColors.criticalRed,
+                                    label: 'SOS',
+                                  ),
+                                  const SizedBox(width: 12),
+                                  _CompactDot(
+                                    color: AppColors.primaryGreen,
+                                    label: 'User',
+                                  ),
+                                ],
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 6.0),
+                                child: Divider(height: 1),
+                              ),
+                              Text(
+                                'Items & SOS: ${_resources.length}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
-                          const _LegendDot(
-                            color: AppColors.infoBlue,
-                            label: 'Blue Zone',
-                          ),
-                          const _LegendDot(
-                            color: AppColors.criticalRed,
-                            label: 'SOS Alert',
-                          ),
-                          const _LegendDot(
-                            color: AppColors.primaryGreen,
-                            label: 'User Marked',
-                          ),
-                          Text('Resources/SOS: ${_resources.length}'),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -536,8 +615,8 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   }
 }
 
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.color, required this.label});
+class _CompactDot extends StatelessWidget {
+  const _CompactDot({required this.color, required this.label});
 
   final Color color;
   final String label;
@@ -545,10 +624,14 @@ class _LegendDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        CircleAvatar(radius: 6, backgroundColor: color),
-        const SizedBox(width: 6),
-        Text(label),
+        CircleAvatar(radius: 5, backgroundColor: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+        ),
       ],
     );
   }
