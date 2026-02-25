@@ -8,13 +8,23 @@ import 'package:latlong2/latlong.dart';
 import '../../core/api_client.dart';
 import '../../core/location_service.dart';
 import '../../core/models.dart';
+import '../../core/socket_service.dart';
+import '../../core/database_helper.dart';
 import '../../theme/app_colors.dart';
+import 'sos_alerts_panel.dart';
+import 'emergency_sos_box.dart';
 
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key, required this.api, required this.user});
+  const HomeTab({
+    super.key,
+    required this.api,
+    required this.user,
+    this.onNavigate,
+  });
 
   final ApiClient api;
   final AppUser user;
+  final void Function(int, {LatLng? target})? onNavigate;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -23,6 +33,7 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
   final _locationService = LocationService();
   final MapController _miniMapController = MapController();
+  double _currentZoom = 12.0;
 
   Position? _position;
   bool _loading = true;
@@ -162,12 +173,39 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
                   ),
                 GestureDetector(
                   onTap: () {
-                    DefaultTabController.of(context).animateTo(1);
+                    widget.onNavigate?.call(1);
                   },
                   child: Card(
                     clipBehavior: Clip.antiAlias,
                     child: SizedBox(height: 200, child: _buildMiniMap()),
                   ),
+                ),
+                _buildStatsRow(),
+                const SizedBox(height: 12),
+                EmergencySosBox(
+                  user: widget.user,
+                  api: widget.api,
+                  onSosTap: () {
+                    final alerts = SocketService.instance.liveSosAlerts.value;
+                    if (alerts.isNotEmpty) {
+                      DatabaseHelper.instance
+                          .getActiveIncident(widget.user.id)
+                          .then((active) {
+                            if (context.mounted) {
+                              SosAlertsPanel.show(
+                                context: context,
+                                alerts: alerts,
+                                activeLocalUuid: active?.uuid,
+                                onCancelSos: null,
+                                onGoToSosPanels: () =>
+                                    widget.onNavigate?.call(3),
+                              );
+                            }
+                          });
+                    }
+                  },
+                  onSosLocationTap: (ll) =>
+                      widget.onNavigate?.call(1, target: ll),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -274,61 +312,139 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
       if (lat != null && lng != null) center = LatLng(lat, lng);
     }
 
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Stack(
       children: [
-        FlutterMap(
-          mapController: _miniMapController,
-          options: MapOptions(
-            initialCenter: center,
-            initialZoom: 12,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.none,
+        Container(
+          color: isDark ? const Color(0xFF1B1B1B) : Colors.grey[200],
+          child: FlutterMap(
+            mapController: _miniMapController,
+            options: MapOptions(
+              initialCenter: center,
+              initialZoom: _currentZoom,
+              minZoom: 3,
+              maxZoom: 18,
+              onPositionChanged: (pos, hasGesture) {
+                if (hasGesture) {
+                  setState(() {
+                    _currentZoom = pos.zoom;
+                  });
+                }
+              },
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              ),
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.sahyog_app',
+                tileDisplay: const TileDisplay.fadeIn(),
+                tileBuilder: isDark ? _darkTileBuilder : null,
+              ),
+              if (_position != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(_position!.latitude, _position!.longitude),
+                      width: 34,
+                      height: 34,
+                      child: const Icon(
+                        Icons.my_location,
+                        color: AppColors.primaryGreen,
+                        size: 28,
+                      ),
+                    ),
+                  ],
+                ),
+              CircleLayer(
+                circles: _zones.map((zone) {
+                  final lat = parseLat(zone['center_lat']);
+                  final lng = parseLng(zone['center_lng']);
+                  if (lat == null || lng == null) {
+                    return const CircleMarker(point: LatLng(0, 0), radius: 0);
+                  }
+                  final severity = (zone['severity'] ?? 'red').toString();
+                  final radius = parseLat(zone['radius_meters']) ?? 500;
+                  final color = _severityColor(severity);
+                  return CircleMarker(
+                    point: LatLng(lat, lng),
+                    radius: radius,
+                    useRadiusInMeter: true,
+                    color: color.withValues(alpha: 0.18),
+                    borderColor: color,
+                    borderStrokeWidth: 2,
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        if (_currentZoom >= 17.9)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                '100% ZOOM',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.sahyog_app',
-            ),
-            if (_position != null)
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: LatLng(_position!.latitude, _position!.longitude),
-                    width: 34,
-                    height: 34,
-                    child: const Icon(
-                      Icons.my_location,
-                      color: AppColors.primaryGreen,
-                      size: 28,
-                    ),
-                  ),
-                ],
-              ),
-            CircleLayer(
-              circles: _zones.map((zone) {
-                final lat = parseLat(zone['center_lat']);
-                final lng = parseLng(zone['center_lng']);
-                if (lat == null || lng == null) {
-                  return const CircleMarker(point: LatLng(0, 0), radius: 0);
-                }
-                final severity = (zone['severity'] ?? 'red').toString();
-                final radius = parseLat(zone['radius_meters']) ?? 500;
-                final color = _severityColor(severity);
-                return CircleMarker(
-                  point: LatLng(lat, lng),
-                  radius: radius,
-                  useRadiusInMeter: true,
-                  color: color.withValues(alpha: 0.18),
-                  borderColor: color,
-                  borderStrokeWidth: 2,
-                );
-              }).toList(),
-            ),
-          ],
-        ),
       ],
     );
+  }
+
+  Widget _darkTileBuilder(
+    BuildContext context,
+    Widget tileWidget,
+    TileImage tile,
+  ) {
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix([
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+      ]),
+      child: tileWidget,
+    );
+  }
+
+  double? parseLat(dynamic val) {
+    if (val == null) return null;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString());
+  }
+
+  double? parseLng(dynamic val) {
+    return parseLat(val);
   }
 
   Color _severityColor(String severity) {
@@ -340,6 +456,132 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
       default:
         return AppColors.criticalRed;
     }
+  }
+
+  Widget _buildStatsRow() {
+    final items = [
+      ('Tasks', _recentTasks.length, Icons.assignment, Colors.blueAccent, 2),
+      ('SOS', 0, Icons.sos, AppColors.criticalRed, 2),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: items.map((item) {
+          final (label, value, _, color, tabIndex) = item;
+          final displayValue = (label == 'SOS')
+              ? SocketService.instance.liveSosAlerts.value.length
+              : value;
+
+          return Expanded(
+            child: InkWell(
+              onTap: () {
+                if (label == 'SOS') {
+                  final alerts = SocketService.instance.liveSosAlerts.value;
+                  if (alerts.isNotEmpty) {
+                    DatabaseHelper.instance
+                        .getActiveIncident(widget.user.id)
+                        .then((active) {
+                          if (context.mounted) {
+                            SosAlertsPanel.show(
+                              context: context,
+                              alerts: alerts,
+                              activeLocalUuid: active?.uuid,
+                              onCancelSos: null,
+                              onGoToSosPanels: () =>
+                                  widget.onNavigate?.call(tabIndex),
+                            );
+                          }
+                        });
+                  } else {
+                    widget.onNavigate?.call(tabIndex);
+                  }
+                } else {
+                  widget.onNavigate?.call(tabIndex);
+                }
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 4,
+                  ),
+                  child: Column(
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 600),
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) {
+                              final inAnimation = Tween<Offset>(
+                                begin: const Offset(0.0, 1.0),
+                                end: Offset.zero,
+                              ).animate(animation);
+                              final outAnimation = Tween<Offset>(
+                                begin: const Offset(0.0, -1.0),
+                                end: Offset.zero,
+                              ).animate(animation);
+
+                              if (child.key == ValueKey<int>(displayValue)) {
+                                return ClipRect(
+                                  child: SlideTransition(
+                                    position: inAnimation,
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                return ClipRect(
+                                  child: SlideTransition(
+                                    position: outAnimation,
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                        child: Text(
+                          '$displayValue',
+                          key: ValueKey<int>(displayValue),
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 }
 

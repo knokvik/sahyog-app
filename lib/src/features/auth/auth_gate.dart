@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -19,10 +20,8 @@ import '../coordinator/coordinator_operations_tab.dart';
 import '../coordinator/combined_sos_tab.dart';
 import '../home/home_tab.dart';
 import '../home/user_home_tab.dart';
-import '../home/global_sos_indicator.dart';
 import '../map/map_tab.dart';
 import '../missing/missing_tab.dart';
-import '../../core/draggable_sos_wrapper.dart';
 import '../notifications/notifications_tab.dart';
 import '../profile/profile_tab.dart';
 import 'user_profile_completion_screen.dart';
@@ -225,6 +224,7 @@ class UserAppShell extends StatefulWidget {
 
 class _UserAppShellState extends State<UserAppShell> {
   int _index = 0;
+  LatLng? _mapTarget;
   final ValueNotifier<int> _refreshNotifier = ValueNotifier(0);
 
   static const _titles = ['Dashboard', 'Map', 'Missing', 'Profile'];
@@ -236,10 +236,19 @@ class _UserAppShellState extends State<UserAppShell> {
         key: ValueKey('u_home_${_index}_${_refreshNotifier.value}'),
         api: widget.api,
         user: widget.user,
+        onNavigate: (index, {target}) {
+          setState(() {
+            _mapTarget = target;
+            _index = index;
+          });
+        },
       ),
       MapTab(
-        key: ValueKey('u_map_${_index}_${_refreshNotifier.value}'),
+        key: ValueKey(
+          'u_map_${_index}_${_refreshNotifier.value}_${_mapTarget?.latitude}',
+        ),
         api: widget.api,
+        initialTarget: _mapTarget,
       ),
       MissingTab(
         key: ValueKey('u_missing_${_index}_${_refreshNotifier.value}'),
@@ -342,6 +351,7 @@ class GeneralAppShell extends StatefulWidget {
 
 class _GeneralAppShellState extends State<GeneralAppShell> {
   int _index = 0;
+  LatLng? _mapTarget;
   final ValueNotifier<int> _refreshNotifier = ValueNotifier(0);
 
   static const _titles = ['Dashboard', 'Map', 'SOS', 'Tasks', 'Profile'];
@@ -353,10 +363,19 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
         key: ValueKey('home_${_index}_${_refreshNotifier.value}'),
         api: widget.api,
         user: widget.user,
+        onNavigate: (index, {target}) {
+          setState(() {
+            _mapTarget = target;
+            _index = index;
+          });
+        },
       ),
       MapTab(
-        key: ValueKey('map_${_index}_${_refreshNotifier.value}'),
+        key: ValueKey(
+          'map_${_index}_${_refreshNotifier.value}_${_mapTarget?.latitude}',
+        ),
         api: widget.api,
+        initialTarget: _mapTarget,
       ),
       CombinedSosTab(
         key: ValueKey('sos_${_index}_${_refreshNotifier.value}'),
@@ -456,20 +475,7 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
       ),
     );
 
-    return Stack(
-      children: [
-        scaffold,
-        DraggableSosWrapper(
-          child: GlobalSosIndicator(
-            user: widget.user,
-            api: widget.api,
-            onTap: () {
-              setState(() => _index = 2); // Switch to SOS Tab
-            },
-          ),
-        ),
-      ],
-    );
+    return scaffold;
   }
 }
 
@@ -486,6 +492,7 @@ class CoordinatorAppShell extends StatefulWidget {
 class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
   int _index = 0;
   int _operationsTabIndex = 0;
+  LatLng? _mapTarget;
   final ValueNotifier<int> _refreshNotifier = ValueNotifier(0);
 
   static const _titles = ['Dashboard', 'Map', 'Operations', 'SOS', 'Profile'];
@@ -497,7 +504,14 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
         key: ValueKey('c_dash_${_refreshNotifier.value}'),
         api: widget.api,
         user: widget.user,
-        onNavigate: (index) {
+        onNavigate: (index, {target}) {
+          if (target != null) {
+            setState(() {
+              _mapTarget = target;
+              _index = 1; // Map Tab
+            });
+            return;
+          }
           if (index >= 10) {
             // sub-navigation to operations
             setState(() {
@@ -514,7 +528,13 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
           }
         },
       ),
-      MapTab(key: ValueKey('c_map_${_refreshNotifier.value}'), api: widget.api),
+      MapTab(
+        key: ValueKey(
+          'c_map_${_refreshNotifier.value}_${_mapTarget?.latitude}',
+        ),
+        api: widget.api,
+        initialTarget: _mapTarget,
+      ),
       CoordinatorOperationsTab(
         key: ValueKey('c_ops_${_operationsTabIndex}_${_refreshNotifier.value}'),
         api: widget.api,
@@ -613,20 +633,7 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
       ),
     );
 
-    return Stack(
-      children: [
-        scaffold,
-        DraggableSosWrapper(
-          child: GlobalSosIndicator(
-            user: widget.user,
-            api: widget.api,
-            onTap: () {
-              setState(() => _index = 3); // Switch to SOS Tab
-            },
-          ),
-        ),
-      ],
-    );
+    return scaffold;
   }
 }
 

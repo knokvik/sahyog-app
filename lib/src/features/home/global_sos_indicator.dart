@@ -4,8 +4,9 @@ import '../../core/socket_service.dart';
 import '../../core/sos_sync_engine.dart';
 import '../../core/database_helper.dart';
 import '../../core/sos_state_machine.dart';
-import '../../core/models.dart';
 import '../../core/location_service.dart';
+import '../../core/api_client.dart';
+import '../../core/models.dart';
 import '../../theme/app_colors.dart';
 
 class GlobalSosIndicator extends StatefulWidget {
@@ -13,10 +14,12 @@ class GlobalSosIndicator extends StatefulWidget {
     super.key,
     required this.onTap,
     required this.user,
+    required this.api,
   });
 
   final VoidCallback onTap;
   final AppUser user;
+  final ApiClient api;
 
   @override
   State<GlobalSosIndicator> createState() => _GlobalSosIndicatorState();
@@ -28,9 +31,21 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
 
+  int _sosHoldTicks = 0;
+  Timer? _sosHoldTimer;
+  bool _sosFired = false;
+  final LocationService _locationService = LocationService();
+
+  // Polling for active SOS status
+  Timer? _pollTimer;
+  String? _activeLocalUuid;
+  String? _activeSosId;
+
   @override
   void initState() {
     super.initState();
+    _startPolling();
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -47,11 +62,31 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
     ).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeOut));
   }
 
+  void _startPolling() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+      final db = DatabaseHelper.instance;
+      final active = await db.getActiveIncident(widget.user.id);
+      if (mounted) {
+        setState(() {
+          _activeLocalUuid = active?.uuid;
+          _activeSosId = active?.backendId;
+          _sosFired = active != null;
+        });
+      }
+    });
+    // Check once immediately
+    DatabaseHelper.instance.getActiveIncident(widget.user.id).then((active) {
+      if (mounted) {
+        setState(() {
+          _activeLocalUuid = active?.uuid;
+          _activeSosId = active?.backendId;
+          _sosFired = active != null;
+        });
+      }
+    });
+  }
+
   // ── SOS Triggering Logic ──
-  int _sosHoldTicks = 0;
-  Timer? _sosHoldTimer;
-  bool _sosFired = false;
-  final LocationService _locationService = LocationService();
 
   Future<void> _triggerSOS() async {
     final db = DatabaseHelper.instance;
@@ -100,12 +135,55 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
     SosSyncEngine.instance.syncAll();
 
     if (mounted) {
+      setState(() {
+        _activeLocalUuid = incident.uuid;
+        _sosFired = true;
+      });
+
       // Navigate to the SOS Home tab
       widget.onTap();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('SOS Requested! Navigating to SOS Panel...'),
           backgroundColor: AppColors.criticalRed,
+        ),
+      );
+    }
+  }
+
+  Future<void> _cancelSOS() async {
+    final db = DatabaseHelper.instance;
+    final incidentId = _activeLocalUuid;
+    final backendIdToCancel = _activeSosId;
+
+    if (incidentId == null) return;
+
+    if (mounted) {
+      setState(() {
+        _sosFired = false;
+        _activeLocalUuid = null;
+        _activeSosId = null;
+      });
+    }
+
+    // 1. Update SQLite locally to 'cancelled'
+    await db.atomicUpdateIncident(incidentId, status: SosStatus.cancelled);
+
+    // 2. Clear from server (if it had synced)
+    if (backendIdToCancel != null && backendIdToCancel.isNotEmpty) {
+      try {
+        await widget.api.put('/api/v1/sos/$backendIdToCancel/cancel');
+        await db.markCancellationSynced(incidentId);
+      } catch (e) {
+        // SyncEngine will retry pending cancellations later if offline
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS Alert Cancelled Successfully'),
+          backgroundColor: AppColors.primaryGreen,
         ),
       );
     }
@@ -122,6 +200,7 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _pulseController.dispose();
     _sosHoldTimer?.cancel();
     super.dispose();
@@ -274,6 +353,40 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
               ),
             ),
             const SizedBox(height: 16),
+            if (_activeLocalUuid != null) ...[
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _cancelSOS();
+                  },
+                  icon: const Icon(Icons.cancel, size: 20),
+                  label: const Text(
+                    'STOP SOS',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                      fontSize: 14,
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.criticalRed,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: const BorderSide(
+                        color: AppColors.criticalRed,
+                        width: 2,
+                      ),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             SizedBox(
               width: double.infinity,
               height: 56,
@@ -313,6 +426,8 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
         final count = alerts.length;
         final double progress = (_sosHoldTicks / 50.0).clamp(0.0, 1.0);
 
+        final bool isCanceling = _activeLocalUuid != null;
+
         return GestureDetector(
           onTap: () {
             if (count > 0) {
@@ -322,7 +437,8 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
             }
           },
           onTapDown: (_) {
-            if (_sosFired) return;
+            if (_sosFired && !isCanceling)
+              return; // If active tracking says otherwise, allow
             _sosHoldTicks = 0;
             _sosHoldTimer = Timer.periodic(const Duration(milliseconds: 100), (
               timer,
@@ -332,8 +448,12 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
                 _sosHoldTicks++;
                 if (_sosHoldTicks >= 50) {
                   _sosHoldTimer?.cancel();
-                  _sosFired = true;
-                  _triggerSOS();
+                  if (isCanceling) {
+                    _cancelSOS();
+                  } else {
+                    _sosFired = true;
+                    _triggerSOS();
+                  }
                 }
               });
             });
@@ -380,8 +500,11 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: AppColors.criticalRed,
+                    color: isCanceling ? Colors.white : AppColors.criticalRed,
                     shape: BoxShape.circle,
+                    border: isCanceling
+                        ? Border.all(color: AppColors.criticalRed, width: 2)
+                        : null,
                     boxShadow: [
                       BoxShadow(
                         color: AppColors.criticalRed.withOpacity(0.4),
@@ -393,12 +516,20 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.sos, color: Colors.white, size: 24),
+                      Icon(
+                        isCanceling ? Icons.cancel : Icons.sos,
+                        color: isCanceling
+                            ? AppColors.criticalRed
+                            : Colors.white,
+                        size: 24,
+                      ),
                       Text(
-                        count > 0 ? '$count' : 'SOS',
+                        isCanceling ? 'STOP' : (count > 0 ? '$count' : 'SOS'),
                         style: TextStyle(
-                          color: Colors.white,
-                          fontSize: count > 0 ? 11 : 10,
+                          color: isCanceling
+                              ? AppColors.criticalRed
+                              : Colors.white,
+                          fontSize: isCanceling ? 10 : (count > 0 ? 11 : 10),
                           fontWeight: FontWeight.w900,
                         ),
                       ),

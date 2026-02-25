@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,6 +6,10 @@ import 'package:latlong2/latlong.dart';
 import '../../core/api_client.dart';
 import '../../core/models.dart';
 import '../../theme/app_colors.dart';
+import '../home/emergency_sos_box.dart';
+import '../home/sos_alerts_panel.dart';
+import '../../core/socket_service.dart';
+import '../../core/database_helper.dart';
 
 class CoordinatorDashboardTab extends StatefulWidget {
   const CoordinatorDashboardTab({
@@ -18,7 +21,7 @@ class CoordinatorDashboardTab extends StatefulWidget {
 
   final ApiClient api;
   final AppUser user;
-  final void Function(int) onNavigate;
+  final void Function(int, {LatLng? target}) onNavigate;
 
   @override
   State<CoordinatorDashboardTab> createState() =>
@@ -37,6 +40,8 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   List<Map<String, dynamic>> _recentSos = [];
   List<Map<String, dynamic>> _recentTasks = [];
   List<Map<String, dynamic>> _zones = [];
+
+  double _currentZoom = 12.0;
 
   @override
   void initState() {
@@ -123,6 +128,30 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                   const SizedBox(height: 12),
                   _buildStatsRow(),
                   const SizedBox(height: 12),
+                  EmergencySosBox(
+                    user: widget.user,
+                    api: widget.api,
+                    onSosTap: () {
+                      final alerts = SocketService.instance.liveSosAlerts.value;
+                      if (alerts.isNotEmpty) {
+                        DatabaseHelper.instance
+                            .getActiveIncident(widget.user.id)
+                            .then((active) {
+                              if (context.mounted) {
+                                SosAlertsPanel.show(
+                                  context: context,
+                                  alerts: alerts,
+                                  activeLocalUuid: active?.uuid,
+                                  onCancelSos: null,
+                                  onGoToSosPanels: () => widget.onNavigate(3),
+                                );
+                              }
+                            });
+                      }
+                    },
+                    onSosLocationTap: (ll) => widget.onNavigate(3, target: ll),
+                  ),
+                  const SizedBox(height: 12),
                   _buildRecentTasks(),
                   const SizedBox(height: 12),
                   _buildRecentSos(),
@@ -141,7 +170,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(30),
-        side: BorderSide(color: Colors.grey.withValues(alpha: 0.3), width: 1),
+        side: BorderSide(color: Colors.grey.withOpacity(0.3), width: 1),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -185,21 +214,21 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
         stats['volunteers'] ?? 0,
         Icons.people_alt,
         AppColors.primaryGreen,
-        10,
+        10, // Index for Volunteers tab
       ),
       (
         'Tasks',
-        _recentTasks.length, // Or use a total count from stats if available
+        _recentTasks.length,
         Icons.assignment,
         Colors.blueAccent,
-        11,
+        11, // Index for Tasks tab
       ),
       (
         'Needs',
         stats['active_needs'] ?? 0,
         Icons.report_problem,
         Colors.orange,
-        12,
+        12, // Index for Needs tab
       ),
       ('SOS', _recentSos.length, Icons.sos, AppColors.criticalRed, 3),
     ];
@@ -212,7 +241,31 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
           final (label, value, _, color, tabIndex) = item;
           return Expanded(
             child: InkWell(
-              onTap: () => widget.onNavigate(tabIndex),
+              onTap: () {
+                if (label == 'SOS') {
+                  final alerts = SocketService.instance.liveSosAlerts.value;
+                  if (alerts.isNotEmpty) {
+                    DatabaseHelper.instance
+                        .getActiveIncident(widget.user.id)
+                        .then((active) {
+                          if (context.mounted) {
+                            SosAlertsPanel.show(
+                              context: context,
+                              alerts: alerts,
+                              activeLocalUuid: active?.uuid,
+                              onCancelSos: null,
+                              onGoToSosPanels: () =>
+                                  widget.onNavigate(tabIndex),
+                            );
+                          }
+                        });
+                  } else {
+                    widget.onNavigate(tabIndex);
+                  }
+                } else {
+                  widget.onNavigate(tabIndex);
+                }
+              },
               borderRadius: BorderRadius.circular(16),
               child: Card(
                 elevation: 0,
@@ -231,25 +284,45 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                   child: Column(
                     children: [
                       AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 500),
+                        duration: const Duration(milliseconds: 600),
                         transitionBuilder:
                             (Widget child, Animation<double> animation) {
-                              return SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0.0, 0.5),
-                                  end: Offset.zero,
-                                ).animate(animation),
-                                child: FadeTransition(
-                                  opacity: animation,
-                                  child: child,
-                                ),
-                              );
+                              final inAnimation = Tween<Offset>(
+                                begin: const Offset(0.0, 1.0),
+                                end: Offset.zero,
+                              ).animate(animation);
+                              final outAnimation = Tween<Offset>(
+                                begin: const Offset(0.0, -1.0),
+                                end: Offset.zero,
+                              ).animate(animation);
+
+                              if (child.key == ValueKey<int>(value)) {
+                                return ClipRect(
+                                  child: SlideTransition(
+                                    position: inAnimation,
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                return ClipRect(
+                                  child: SlideTransition(
+                                    position: outAnimation,
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              }
                             },
                         child: Text(
                           '$value',
                           key: ValueKey<int>(value),
                           style: TextStyle(
-                            fontSize: 24, // Reduced font size to fit
+                            fontSize: 24,
                             fontWeight: FontWeight.w800,
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
@@ -258,7 +331,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                       Text(
                         label,
                         style: const TextStyle(
-                          fontSize: 10, // Reduced font size to fit
+                          fontSize: 10,
                           fontWeight: FontWeight.w600,
                           color: Colors.grey,
                         ),
@@ -287,59 +360,128 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
       }
     }
 
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: GestureDetector(
-        onLongPress: () => widget.onNavigate(1),
-        child: SizedBox(
-          height: 180,
-          child: Stack(
-            children: [
-              FlutterMap(
-                mapController: _miniMapController,
-                options: MapOptions(
-                  initialCenter: center,
-                  initialZoom: 11,
-                  interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.none,
+      child: Stack(
+        children: [
+          Container(
+            height: 180,
+            color: isDark ? const Color(0xFF1B1B1B) : Colors.grey[200],
+            child: FlutterMap(
+              mapController: _miniMapController,
+              options: MapOptions(
+                initialCenter: center,
+                initialZoom: _currentZoom,
+                minZoom: 3,
+                maxZoom: 18,
+                onPositionChanged: (pos, hasGesture) {
+                  if (hasGesture) {
+                    setState(() {
+                      _currentZoom = pos.zoom;
+                    });
+                  }
+                },
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.sahyog_app',
+                  tileDisplay: const TileDisplay.fadeIn(),
+                  tileBuilder: isDark ? _darkTileBuilder : null,
+                ),
+                CircleLayer(
+                  circles: _zones.map((zone) {
+                    final lat = parseLat(zone['center_lat']);
+                    final lng = parseLng(zone['center_lng']);
+                    if (lat == null || lng == null) {
+                      return CircleMarker(point: const LatLng(0, 0), radius: 0);
+                    }
+                    final severity = (zone['severity'] ?? 'red').toString();
+                    final radius = parseLat(zone['radius_meters']) ?? 400;
+                    final color = _severityColor(severity);
+                    return CircleMarker(
+                      point: LatLng(lat, lng),
+                      radius: radius,
+                      useRadiusInMeter: true,
+                      color: color.withValues(alpha: 0.16),
+                      borderColor: color,
+                      borderStrokeWidth: 2,
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          if (_currentZoom >= 17.9)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  '100% ZOOM',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.example.sahyog_app',
-                  ),
-                  CircleLayer(
-                    circles: _zones.map((zone) {
-                      final lat = parseLat(zone['center_lat']);
-                      final lng = parseLng(zone['center_lng']);
-                      if (lat == null || lng == null) {
-                        return const CircleMarker(
-                          point: LatLng(0, 0),
-                          radius: 0,
-                        );
-                      }
-                      final severity = (zone['severity'] ?? 'red').toString();
-                      final radius = parseLat(zone['radius_meters']) ?? 400;
-                      final color = _severityColor(severity);
-                      return CircleMarker(
-                        point: LatLng(lat, lng),
-                        radius: radius,
-                        useRadiusInMeter: true,
-                        color: color.withValues(alpha: 0.16),
-                        borderColor: color,
-                        borderStrokeWidth: 2,
-                      );
-                    }).toList(),
-                  ),
-                ],
               ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
+  }
+
+  Widget _darkTileBuilder(
+    BuildContext context,
+    Widget tileWidget,
+    TileImage tile,
+  ) {
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix([
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+      ]),
+      child: tileWidget,
+    );
+  }
+
+  double? parseLat(dynamic val) {
+    if (val == null) return null;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString());
+  }
+
+  double? parseLng(dynamic val) {
+    return parseLat(val);
   }
 
   Widget _buildRecentTasks() {
@@ -381,9 +523,9 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                       Container(
                         width: 8,
                         height: 8,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.blueAccent,
+                          color: Colors.black.withValues(alpha: 0.7),
                         ),
                       ),
                       const SizedBox(width: 12),

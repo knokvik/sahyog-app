@@ -417,8 +417,6 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
   // ── Build ──────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-
     return Column(
       children: [
         TabBar(
@@ -433,6 +431,7 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
             Tab(text: 'History'),
           ],
         ),
+        if (_loading) const LinearProgressIndicator(minHeight: 2),
         if (_error.isNotEmpty)
           Padding(
             padding: const EdgeInsets.all(8),

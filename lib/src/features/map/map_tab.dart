@@ -11,9 +11,10 @@ import '../../core/models.dart';
 import '../../theme/app_colors.dart';
 
 class MapTab extends StatefulWidget {
-  const MapTab({super.key, required this.api});
+  const MapTab({super.key, required this.api, this.initialTarget});
 
   final ApiClient api;
+  final LatLng? initialTarget;
 
   @override
   State<MapTab> createState() => _MapTabState();
@@ -31,6 +32,9 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   bool _loading = true;
   String _error = '';
   Timer? _pollTimer;
+  double _currentZoom = 12.0;
+
+  bool _isMapReady = false;
 
   @override
   void initState() {
@@ -39,6 +43,25 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
     _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) _load(silent: true);
     });
+  }
+
+  void _handleInitialTarget() {
+    if (widget.initialTarget != null && _isMapReady) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          _mapController.move(widget.initialTarget!, 16);
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(MapTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTarget != null &&
+        widget.initialTarget != oldWidget.initialTarget) {
+      _handleInitialTarget();
+    }
   }
 
   @override
@@ -200,7 +223,6 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   Widget build(BuildContext context) {
     super.build(context);
 
-    // Keep map in memory, let FlutterMap's tile loader pull cached layers
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -216,158 +238,205 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
             Expanded(
               child: Stack(
                 children: [
-                  FlutterMap(
-                    mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: _zones.isNotEmpty
-                          ? _zones.first.center
-                          : _center,
-                      initialZoom: 12,
-                      onLongPress: (tapPosition, latLng) {
-                        setState(() {
-                          _userMarkedZones.add(
-                            _ZoneCircle(
-                              id: 'local-${DateTime.now().millisecondsSinceEpoch}',
-                              name: 'User Marked Zone',
-                              severity: 'blue',
-                              radiusMeters: 250,
-                              center: latLng,
+                  Container(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF1B1B1B)
+                        : Colors.grey[200],
+                    child: FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _zones.isNotEmpty
+                            ? _zones.first.center
+                            : _center,
+                        initialZoom: _currentZoom,
+                        minZoom: 3,
+                        maxZoom: 18,
+                        onMapReady: () {
+                          setState(() => _isMapReady = true);
+                          _handleInitialTarget();
+                        },
+                        onPositionChanged: (pos, hasGesture) {
+                          if (hasGesture) {
+                            setState(() {
+                              _currentZoom = pos.zoom;
+                            });
+                          }
+                        },
+                        onLongPress: (tapPosition, latLng) {
+                          setState(() {
+                            _userMarkedZones.add(
+                              _ZoneCircle(
+                                id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+                                name: 'User Marked Zone',
+                                severity: 'blue',
+                                radiusMeters: 250,
+                                center: latLng,
+                              ),
+                            );
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Zone marker added (long-press).'),
                             ),
                           );
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Zone marker added (long-press).'),
-                          ),
-                        );
-                      },
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.example.sahyog_app',
+                        },
                       ),
-                      // User Location Marker - Only show if we have successfully located
-                      if (_userLocation != null)
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.example.sahyog_app',
+                          tileDisplay: const TileDisplay.fadeIn(),
+                          tileBuilder:
+                              Theme.of(context).brightness == Brightness.dark
+                              ? _darkTileBuilder
+                              : null,
+                        ),
+                        if (_userLocation != null)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: _userLocation!,
+                                width: 60,
+                                height: 60,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Container(
+                                      width: 42,
+                                      height: 42,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.15,
+                                            ),
+                                            blurRadius: 10,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.gps_fixed,
+                                      color: AppColors.primaryGreen,
+                                      size: 26,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        CircleLayer(
+                          circles: _zones.map((z) {
+                            return CircleMarker(
+                              point: z.center,
+                              radius: max(40, z.radiusMeters / 5),
+                              useRadiusInMeter: true,
+                              color: _severityColor(
+                                z.severity,
+                              ).withValues(alpha: 0.16),
+                              borderColor: _severityColor(z.severity),
+                              borderStrokeWidth: 2,
+                            );
+                          }).toList(),
+                        ),
+                        CircleLayer(
+                          circles: _userMarkedZones.map((z) {
+                            return CircleMarker(
+                              point: z.center,
+                              radius: z.radiusMeters,
+                              useRadiusInMeter: true,
+                              color: AppColors.primaryGreen.withValues(
+                                alpha: 0.16,
+                              ),
+                              borderColor: AppColors.primaryGreen,
+                              borderStrokeWidth: 2,
+                            );
+                          }).toList(),
+                        ),
                         MarkerLayer(
-                          markers: [
-                            Marker(
-                              point: _userLocation!,
-                              width: 60,
+                          markers: _resources.map((r) {
+                            final isSos = r.type == 'SOS';
+                            return Marker(
+                              point: r.point,
+                              width: 120,
                               height: 60,
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Container(
-                                    width: 42,
-                                    height: 42,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.15),
-                                          blurRadius: 10,
+                              child: isSos
+                                  ? _SosMarker()
+                                  : Column(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            boxShadow: const [
+                                              BoxShadow(
+                                                blurRadius: 6,
+                                                color: Color(0x22000000),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Text(
+                                            r.type,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black,
+                                            ),
+                                          ),
+                                        ),
+                                        const Icon(
+                                          Icons.location_on,
+                                          color: AppColors.primaryGreen,
+                                          size: 26,
                                         ),
                                       ],
                                     ),
-                                  ),
-                                  const Icon(
-                                    Icons.gps_fixed,
-                                    color: AppColors.primaryGreen,
-                                    size: 26,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                            );
+                          }).toList(),
                         ),
-                      CircleLayer(
-                        circles: _zones
-                            .map(
-                              (z) => CircleMarker(
-                                point: z.center,
-                                radius: max(40, z.radiusMeters / 5),
-                                useRadiusInMeter: true,
-                                color: _severityColor(
-                                  z.severity,
-                                ).withValues(alpha: 0.16),
-                                borderColor: _severityColor(z.severity),
-                                borderStrokeWidth: 2,
-                              ),
-                            )
-                            .toList(),
-                      ),
-                      CircleLayer(
-                        circles: _userMarkedZones
-                            .map(
-                              (z) => CircleMarker(
-                                point: z.center,
-                                radius: z.radiusMeters,
-                                useRadiusInMeter: true,
-                                color: AppColors.primaryGreen.withValues(
-                                  alpha: 0.16,
-                                ),
-                                borderColor: AppColors.primaryGreen,
-                                borderStrokeWidth: 2,
-                              ),
-                            )
-                            .toList(),
-                      ),
-                      MarkerLayer(
-                        markers: _resources.map((r) {
-                          final isSos = r.type == 'SOS';
-                          return Marker(
-                            point: r.point,
-                            width: 120,
-                            height: 60,
-                            child: isSos
-                                ? _SosMarker()
-                                : Column(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          boxShadow: const [
-                                            BoxShadow(
-                                              blurRadius: 6,
-                                              color: Color(0x22000000),
-                                            ),
-                                          ],
-                                        ),
-                                        child: Text(
-                                          r.type,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.black,
-                                          ),
-                                        ),
-                                      ),
-                                      const Icon(
-                                        Icons.location_on,
-                                        color: AppColors.primaryGreen,
-                                        size: 26,
-                                      ),
-                                    ],
-                                  ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                  if (_currentZoom >= 17.9)
+                    Positioned(
+                      top: 16,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'MAX ZOOM (100%)',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   Positioned(
                     right: 16,
-                    bottom: 90, // moved up to avoid overlapping with FAB
+                    bottom: 90,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -384,7 +453,6 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                                 setState(() {
                                   _userLocation = ll;
                                 });
-
                                 // Detect San Francisco emulator default
                                 final isEmulatorSF =
                                     (ll.latitude > 37.42 &&
@@ -506,11 +574,11 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           decoration: BoxDecoration(
                             color: Theme.of(
                               context,
-                            ).cardColor.withOpacity(0.95),
+                            ).cardColor.withValues(alpha: 0.95),
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Colors.black.withValues(alpha: 0.1),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               ),
@@ -612,6 +680,38 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
       default:
         return AppColors.criticalRed;
     }
+  }
+
+  Widget _darkTileBuilder(
+    BuildContext context,
+    Widget tileWidget,
+    TileImage tile,
+  ) {
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix([
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+      ]),
+      child: tileWidget,
+    );
   }
 }
 
