@@ -322,57 +322,112 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
 
             return Card(
               margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => TaskDetailScreen(
-                        api: widget.api,
-                        user: widget.user,
-                        task: task,
+              child: Padding(
+                padding: const EdgeInsets.all(0),
+                child: Column(
+                  children: [
+                    ListTile(
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TaskDetailScreen(
+                              api: widget.api,
+                              user: widget.user,
+                              task: task,
+                            ),
+                          ),
+                        );
+                        _load(silent: true);
+                      },
+                      leading: CircleAvatar(
+                        backgroundColor: isUnassigned
+                            ? Colors.orange.withValues(alpha: 0.1)
+                            : AppColors.primaryGreen.withValues(alpha: 0.1),
+                        child: Icon(
+                          isUnassigned
+                              ? Icons.assignment
+                              : Icons.assignment_ind,
+                          color: isUnassigned
+                              ? Colors.orange
+                              : AppColors.primaryGreen,
+                        ),
                       ),
+                      title: Text(
+                        (task['title'] ?? task['type'] ?? 'Task').toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: Text(
+                        isUnassigned
+                            ? 'Unassigned • Click to Accept'
+                            : 'Status: $status',
+                        style: TextStyle(
+                          color: isUnassigned ? Colors.orange[800] : null,
+                          fontWeight: isUnassigned ? FontWeight.bold : null,
+                        ),
+                      ),
+                      trailing: (!isUnassigned && status == 'accepted')
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.check_circle_outline,
+                                color: AppColors.primaryGreen,
+                              ),
+                              tooltip: 'Mark as Done',
+                              onPressed: () => _updateTaskStatus(
+                                (task['id'] ?? '').toString(),
+                                'completed',
+                              ),
+                            )
+                          : const Icon(Icons.chevron_right),
                     ),
-                  );
-                  _load(silent: true);
-                },
-                leading: CircleAvatar(
-                  backgroundColor: isUnassigned
-                      ? Colors.orange.withValues(alpha: 0.1)
-                      : AppColors.primaryGreen.withValues(alpha: 0.1),
-                  child: Icon(
-                    isUnassigned ? Icons.assignment : Icons.assignment_ind,
-                    color: isUnassigned
-                        ? Colors.orange
-                        : AppColors.primaryGreen,
-                  ),
-                ),
-                title: Text(
-                  (task['title'] ?? task['type'] ?? 'Task').toString(),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(
-                  isUnassigned
-                      ? 'Unassigned • Click to Accept'
-                      : 'Status: $status',
-                  style: TextStyle(
-                    color: isUnassigned ? Colors.orange[800] : null,
-                    fontWeight: isUnassigned ? FontWeight.bold : null,
-                  ),
-                ),
-                trailing: (!isUnassigned && status != 'completed')
-                    ? IconButton(
-                        icon: const Icon(
-                          Icons.check_circle_outline,
-                          color: AppColors.primaryGreen,
+                    if (!isUnassigned &&
+                        (status == 'pending' || status == 'assigned'))
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 72,
+                          right: 16,
+                          bottom: 12,
                         ),
-                        tooltip: 'Mark as Done',
-                        onPressed: () => _updateTaskStatus(
-                          (task['id'] ?? '').toString(),
-                          'completed',
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => _updateTaskStatus(
+                                  (task['id'] ?? '').toString(),
+                                  'rejected',
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.criticalRed,
+                                  side: BorderSide(
+                                    color: AppColors.criticalRed.withOpacity(
+                                      0.5,
+                                    ),
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                child: const Text('Decline'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.tonal(
+                                onPressed: () => _updateTaskStatus(
+                                  (task['id'] ?? '').toString(),
+                                  'accepted',
+                                ),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.primaryGreen,
+                                  foregroundColor: Colors.white,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                child: const Text('Accept'),
+                              ),
+                            ),
+                          ],
                         ),
-                      )
-                    : const Icon(Icons.chevron_right),
+                      ),
+                  ],
+                ),
               ),
             );
           }),
