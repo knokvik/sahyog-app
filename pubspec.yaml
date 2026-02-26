@@ -34,7 +34,8 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  clerk_flutter: ^0.0.14-beta
+  clerk_flutter:
+    path: ./packages/clerk_flutter
   flutter_riverpod: ^3.2.1
   http: ^1.6.0
   clerk_auth: ^0.0.14-beta

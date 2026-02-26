@@ -119,14 +119,7 @@ class AppTheme {
           side: const BorderSide(color: Color(0xFF2A3439)),
         ),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: Color(0xFF151D23),
-        surfaceTintColor: Colors.transparent,
-        modalBackgroundColor: Color(0xFF151D23),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-      ),
+
       navigationBarTheme: NavigationBarThemeData(
         height: 65,
         backgroundColor: const Color(0xFF0B1013),
