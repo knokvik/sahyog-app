@@ -192,26 +192,6 @@ class _ProfileTabState extends State<ProfileTab> {
                       email.isEmpty ? 'No email linked' : email,
                       style: theme.textTheme.bodyMedium,
                     ),
-                    const SizedBox(height: 12),
-                    Chip(
-                      backgroundColor:
-                          (widget.user.isUser
-                                  ? Colors.orange
-                                  : AppColors.primaryGreen)
-                              .withValues(alpha: 0.1),
-                      side: BorderSide.none,
-                      label: Text(
-                        (widget.user.isUser ? 'CITIZEN' : widget.user.role)
-                            .toUpperCase(),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          color: widget.user.isUser
-                              ? Colors.deepOrange
-                              : AppColors.primaryGreen,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),

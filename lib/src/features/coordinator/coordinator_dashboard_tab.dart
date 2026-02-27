@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../theme/app_colors.dart';
 import '../home/emergency_sos_box.dart';
 import '../home/sos_alerts_panel.dart';
+import '../search/app_search_delegate.dart';
 import '../../core/socket_service.dart';
 import '../../core/database_helper.dart';
 
@@ -28,8 +29,14 @@ class CoordinatorDashboardTab extends StatefulWidget {
       _CoordinatorDashboardTabState();
 }
 
-class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
+class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
+    with SingleTickerProviderStateMixin {
   final MapController _miniMapController = MapController();
+
+  late final AnimationController _glowCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat();
 
   bool _loading = true;
   String _error = '';
@@ -40,6 +47,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   List<Map<String, dynamic>> _recentSos = [];
   List<Map<String, dynamic>> _recentTasks = [];
   List<Map<String, dynamic>> _zones = [];
+  List<Map<String, dynamic>> _allZones = [];
 
   double _currentZoom = 12.0;
 
@@ -55,6 +63,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _glowCtrl.dispose();
     super.dispose();
   }
 
@@ -72,6 +81,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
         widget.api.get('/api/v1/coordinator/sos'),
         widget.api.get('/api/v1/coordinator/tasks'),
         widget.api.get('/api/v1/coordinator/my-zones'),
+        widget.api.get('/api/v1/coordinator/zones'),
       ]);
 
       if (!mounted) return;
@@ -94,6 +104,9 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
 
         final zonesList = (results[3] is List) ? results[3] as List : [];
         _zones = zonesList.map((e) => e as Map<String, dynamic>).toList();
+
+        final allZonesList = (results[4] is List) ? results[4] as List : [];
+        _allZones = allZonesList.map((e) => e as Map<String, dynamic>).toList();
         _loading = false;
       });
     } catch (e) {
@@ -144,6 +157,12 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                                   activeLocalUuid: active?.uuid,
                                   onCancelSos: null,
                                   onGoToSosPanels: () => widget.onNavigate(3),
+                                  onSosLocationTap: (lat, lng) {
+                                    widget.onNavigate(
+                                      1,
+                                      target: LatLng(lat, lng),
+                                    );
+                                  },
                                 );
                               }
                             });
@@ -166,39 +185,103 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   }
 
   Widget _buildHeader() {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(30),
-        side: BorderSide(color: Colors.grey.withOpacity(0.3), width: 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppColors.primaryGreen,
-              foregroundColor: Colors.white,
-              child: Text(
-                widget.user.name.isNotEmpty
-                    ? widget.user.name[0].toUpperCase()
-                    : '?',
+    return InkWell(
+      onTap: () {
+        showSearch(
+          context: context,
+          delegate: AppSearchDelegate(
+            api: widget.api,
+            onResultTap: (result) {
+              switch (result.category) {
+                case SearchCategory.volunteer:
+                case SearchCategory.task:
+                  widget.onNavigate(10); // Operations > Tasks / Volunteers
+                  break;
+                case SearchCategory.sos:
+                  widget.onNavigate(3); // SOS Operations
+                  break;
+                case SearchCategory.zone:
+                  final lat = double.tryParse(
+                    (result.raw['center_lat'] ?? '').toString(),
+                  );
+                  final lng = double.tryParse(
+                    (result.raw['center_lng'] ?? '').toString(),
+                  );
+                  if (lat != null && lng != null) {
+                    widget.onNavigate(1, target: LatLng(lat, lng));
+                  } else {
+                    widget.onNavigate(1);
+                  }
+                  break;
+              }
+            },
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(30),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+          side: BorderSide(color: Colors.grey.withOpacity(0.3), width: 1),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          child: Row(
+            children: [
+              AnimatedBuilder(
+                animation: _glowCtrl,
+                builder: (context, child) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: SweepGradient(
+                        colors: const [
+                          Colors.transparent,
+                          AppColors.primaryGreen,
+                          Colors.transparent,
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                        transform: GradientRotation(
+                          _glowCtrl.value * 2 * 3.14159,
+                        ),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(2.5),
+                    child: CircleAvatar(
+                      backgroundColor: Colors.white,
+                      radius: 19,
+                      child: CircleAvatar(
+                        backgroundColor: AppColors.primaryGreen,
+                        foregroundColor: Colors.white,
+                        radius: 17,
+                        child: Text(
+                          widget.user.name.isNotEmpty
+                              ? widget.user.name[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextField(
-                onChanged: (val) => setState(() => _searchQuery = val),
-                decoration: const InputDecoration(
-                  hintText: 'Search alerts, tasks...',
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
+              const SizedBox(width: 12),
+              const Expanded(
+                child: TextField(
+                  enabled: false,
+                  decoration: InputDecoration(
+                    hintText: 'Search alerts, tasks...',
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                  ),
                 ),
               ),
-            ),
-            const Icon(Icons.search, color: Colors.grey),
-          ],
+              const Icon(Icons.search, color: Colors.grey),
+            ],
+          ),
         ),
       ),
     );
@@ -222,13 +305,6 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
         Icons.assignment,
         Colors.blueAccent,
         11, // Index for Tasks tab
-      ),
-      (
-        'Needs',
-        stats['active_needs'] ?? 0,
-        Icons.report_problem,
-        Colors.orange,
-        12, // Index for Needs tab
       ),
       ('SOS', _recentSos.length, Icons.sos, AppColors.criticalRed, 3),
     ];
@@ -256,6 +332,9 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                               onCancelSos: null,
                               onGoToSosPanels: () =>
                                   widget.onNavigate(tabIndex),
+                              onSosLocationTap: (lat, lng) {
+                                widget.onNavigate(1, target: LatLng(lat, lng));
+                              },
                             );
                           }
                         });
@@ -395,24 +474,59 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                   tileBuilder: isDark ? _darkTileBuilder : null,
                 ),
                 CircleLayer(
-                  circles: _zones.map((zone) {
-                    final lat = parseLat(zone['center_lat']);
-                    final lng = parseLng(zone['center_lng']);
-                    if (lat == null || lng == null) {
-                      return CircleMarker(point: const LatLng(0, 0), radius: 0);
-                    }
-                    final severity = (zone['severity'] ?? 'red').toString();
-                    final radius = parseLat(zone['radius_meters']) ?? 400;
-                    final color = _severityColor(severity);
-                    return CircleMarker(
-                      point: LatLng(lat, lng),
-                      radius: radius,
-                      useRadiusInMeter: true,
-                      color: color.withValues(alpha: 0.16),
-                      borderColor: color,
-                      borderStrokeWidth: 2,
-                    );
-                  }).toList(),
+                  circles: [
+                    // All zones (muted grey) — other coordinators' zones
+                    ..._allZones.map((zone) {
+                      final lat = parseLat(zone['center_lat']);
+                      final lng = parseLng(zone['center_lng']);
+                      if (lat == null || lng == null) {
+                        return CircleMarker(
+                          point: const LatLng(0, 0),
+                          radius: 0,
+                        );
+                      }
+                      final myZoneIds = _zones
+                          .map((z) => z['id']?.toString())
+                          .toSet();
+                      if (myZoneIds.contains(zone['id']?.toString())) {
+                        return CircleMarker(
+                          point: const LatLng(0, 0),
+                          radius: 0,
+                        );
+                      }
+                      final radius = parseLat(zone['radius_meters']) ?? 400;
+                      return CircleMarker(
+                        point: LatLng(lat, lng),
+                        radius: radius,
+                        useRadiusInMeter: true,
+                        color: Colors.grey.withValues(alpha: 0.08),
+                        borderColor: Colors.grey.withValues(alpha: 0.4),
+                        borderStrokeWidth: 1.5,
+                      );
+                    }),
+                    // My assigned zones (bold severity colors)
+                    ..._zones.map((zone) {
+                      final lat = parseLat(zone['center_lat']);
+                      final lng = parseLng(zone['center_lng']);
+                      if (lat == null || lng == null) {
+                        return CircleMarker(
+                          point: const LatLng(0, 0),
+                          radius: 0,
+                        );
+                      }
+                      final severity = (zone['severity'] ?? 'red').toString();
+                      final radius = parseLat(zone['radius_meters']) ?? 400;
+                      final color = _severityColor(severity);
+                      return CircleMarker(
+                        point: LatLng(lat, lng),
+                        radius: radius,
+                        useRadiusInMeter: true,
+                        color: color.withValues(alpha: 0.16),
+                        borderColor: color,
+                        borderStrokeWidth: 2,
+                      );
+                    }),
+                  ],
                 ),
               ],
             ),

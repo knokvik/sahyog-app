@@ -11,6 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../core/socket_service.dart';
+import 'sos_alerts_panel.dart';
+
 class EmergencySosBox extends StatefulWidget {
   const EmergencySosBox({
     super.key,
@@ -259,6 +262,105 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
   @override
   bool get wantKeepAlive => true;
 
+  Widget _buildLeftSosButton() {
+    return ValueListenableBuilder<Map<String, Map<String, dynamic>>>(
+      valueListenable: SocketService.instance.liveSosAlerts,
+      builder: (context, alerts, _) {
+        final count = alerts.length;
+        return InkWell(
+          onTap: () async {
+            if (count > 0) {
+              final active = await DatabaseHelper.instance.getActiveIncident(
+                widget.user.id,
+              );
+              if (mounted) {
+                SosAlertsPanel.show(
+                  context: context,
+                  alerts: alerts,
+                  activeLocalUuid: active?.uuid,
+                  onCancelSos: null,
+                  onGoToSosPanels: () => widget.onSosTap?.call(),
+                  onSosLocationTap: widget.onSosLocationTap != null
+                      ? (lat, lng) => widget.onSosLocationTap!(LatLng(lat, lng))
+                      : null,
+                );
+              }
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('No active SOS alerts')),
+              );
+            }
+          },
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+          ),
+          child: Container(
+            width: 64,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              border: Border(
+                right: BorderSide(color: Colors.grey.shade300, width: 1),
+              ),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(Icons.sos, size: 24, color: AppColors.criticalRed),
+                if (count > 0)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: AppColors.criticalRed,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRightMapButton() {
+    return InkWell(
+      onTap: () => widget.onSosTap?.call(),
+      borderRadius: const BorderRadius.only(
+        topRight: Radius.circular(16),
+        bottomRight: Radius.circular(16),
+      ),
+      child: Container(
+        width: 64,
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          border: Border(
+            left: BorderSide(color: Colors.grey.shade300, width: 1),
+          ),
+        ),
+        child: const Icon(
+          Icons.pin_drop,
+          color: AppColors.criticalRed,
+          size: 24,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -266,123 +368,277 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
 
     return Column(
       children: [
-        if (_activeSosId != null || _sosFired) ...[
-          GestureDetector(
-            onTapDown: (_) {
-              _sosHoldTicks = 0;
-              _sosHoldTimer = Timer.periodic(
-                const Duration(milliseconds: 100),
-                (timer) {
-                  if (mounted) {
-                    setState(() {
-                      _sosHoldTicks++;
-                      if (_sosHoldTicks >= 50) {
-                        _sosHoldTimer?.cancel();
-                        _cancelSOS();
-                      }
-                    });
-                  }
-                },
-              );
-            },
-            onTapUp: (_) => _cancelHold(),
-            onTapCancel: () => _cancelHold(),
-            onTap: widget.onSosTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              decoration: BoxDecoration(
-                color: AppColors.criticalRed,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.criticalRed.withOpacity(0.4),
-                    blurRadius: 15,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (_sosHoldTicks > 0)
-                    Positioned.fill(
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: progress,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.emergency,
-                        color: Colors.white,
-                        size: 36,
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _sosHoldTicks > 0 ? 'RELEASING...' : 'SOS ACTIVE',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _sosHoldTicks > 0
-                                ? 'Release in ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
-                                : 'Hold for 5 sec to cancel the SOS',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (widget.onSosLocationTap != null) ...[
-                        const Spacer(),
-                        IconButton(
-                          onPressed: () {
-                            if (_activeLocalUuid != null) {
-                              DatabaseHelper.instance
-                                  .getIncidentByUuid(_activeLocalUuid!)
-                                  .then((incident) {
-                                    if (incident != null &&
-                                        incident.lat != null &&
-                                        incident.lng != null) {
-                                      widget.onSosLocationTap!(
-                                        LatLng(incident.lat!, incident.lng!),
-                                      );
-                                    }
-                                  });
-                            }
-                          },
-                          icon: const Icon(
-                            Icons.location_on,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                          tooltip: 'View on Map',
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: (_activeSosId != null || _sosFired)
+                ? AppColors.criticalRed
+                : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: (_activeSosId != null || _sosFired)
+                  ? Colors.transparent
+                  : AppColors.criticalRed,
+              width: 2,
             ),
+            boxShadow: [
+              if (_activeSosId != null || _sosFired)
+                BoxShadow(
+                  color: AppColors.criticalRed.withOpacity(0.4),
+                  blurRadius: 15,
+                  spreadRadius: 2,
+                )
+              else if (_sosHoldTicks > 0)
+                BoxShadow(
+                  color: AppColors.criticalRed.withOpacity(0.3),
+                  blurRadius: 10,
+                  spreadRadius: progress * 5,
+                ),
+            ],
           ),
-          // ── Live Sync Status Strip ──
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Left Partition
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: SizedBox(
+                  width:
+                      (_sosHoldTicks == 0 && _activeSosId == null && !_sosFired)
+                      ? 64
+                      : 0,
+                  child:
+                      (_sosHoldTicks == 0 && _activeSosId == null && !_sosFired)
+                      ? _buildLeftSosButton()
+                      : const SizedBox.shrink(),
+                ),
+              ),
+
+              // Center Partition
+              Expanded(
+                child: (_activeSosId != null || _sosFired)
+                    ? GestureDetector(
+                        onTapDown: (_) {
+                          _sosHoldTicks = 0;
+                          _sosHoldTimer = Timer.periodic(
+                            const Duration(milliseconds: 100),
+                            (timer) {
+                              if (mounted) {
+                                setState(() {
+                                  _sosHoldTicks++;
+                                  if (_sosHoldTicks >= 50) {
+                                    _sosHoldTimer?.cancel();
+                                    _cancelSOS();
+                                  }
+                                });
+                              }
+                            },
+                          );
+                        },
+                        onTapUp: (_) => _cancelHold(),
+                        onTapCancel: () => _cancelHold(),
+                        onTap: widget.onSosTap,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 24,
+                            horizontal: 16,
+                          ),
+                          color: Colors.transparent,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (_sosHoldTicks > 0)
+                                Positioned.fill(
+                                  child: FractionallySizedBox(
+                                    alignment: Alignment.centerLeft,
+                                    widthFactor: progress,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.emergency,
+                                    color: Colors.white,
+                                    size: 36,
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Flexible(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            _sosHoldTicks > 0
+                                                ? 'RELEASING...'
+                                                : 'SOS ACTIVE',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 18,
+                                              letterSpacing: 1.5,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            _sosHoldTicks > 0
+                                                ? 'Release in ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
+                                                : 'Hold 5s to cancel',
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : GestureDetector(
+                        onTapDown: (_) {
+                          if (_sosFired) return;
+                          _sosHoldTicks = 0;
+                          _sosHoldTimer = Timer.periodic(
+                            const Duration(milliseconds: 100),
+                            (timer) {
+                              if (mounted) {
+                                setState(() {
+                                  _sosHoldTicks++;
+                                  if (_sosHoldTicks >= 50) {
+                                    _sosHoldTimer?.cancel();
+                                    _sosFired = true;
+                                    _triggerSOS();
+                                  }
+                                });
+                              }
+                            },
+                          );
+                        },
+                        onTapUp: (_) => _cancelHold(),
+                        onTapCancel: () => _cancelHold(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 24,
+                            horizontal: 16,
+                          ),
+                          color: Colors.transparent,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (!_sosFired && _sosHoldTicks > 0)
+                                Positioned.fill(
+                                  child: FractionallySizedBox(
+                                    alignment: Alignment.centerLeft,
+                                    widthFactor: progress,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.criticalRed
+                                            .withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              AnimatedScale(
+                                scale: _sosHoldTicks > 0 ? 1.06 : 1.0,
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.easeInOut,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Text(
+                                      '✱',
+                                      style: TextStyle(
+                                        color: AppColors.criticalRed,
+                                        fontSize: 40,
+                                        fontWeight: FontWeight.w900,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Flexible(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          const FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              'HOLD FOR SOS',
+                                              style: TextStyle(
+                                                color: AppColors.criticalRed,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 18,
+                                                letterSpacing: 1.5,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              (_sosHoldTicks > 0)
+                                                  ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
+                                                  : 'Hold 5s for help',
+                                              style: TextStyle(
+                                                color: Colors.black54,
+                                                fontSize: 12,
+                                                fontWeight: _sosHoldTicks > 0
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+
+              // Right Partition
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: SizedBox(
+                  width:
+                      (_sosHoldTicks == 0 && _activeSosId == null && !_sosFired)
+                      ? 64
+                      : 0,
+                  child:
+                      (_sosHoldTicks == 0 && _activeSosId == null && !_sosFired)
+                      ? _buildRightMapButton()
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_activeSosId != null || _sosFired)
           ValueListenableBuilder<SosSyncStatus>(
             valueListenable: SosSyncEngine.instance.syncStatusNotifier,
             builder: (context, status, _) {
@@ -441,111 +697,6 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
               }
             },
           ),
-        ] else ...[
-          GestureDetector(
-            onTapDown: (_) {
-              if (_sosFired) return;
-              _sosHoldTicks = 0;
-              _sosHoldTimer = Timer.periodic(
-                const Duration(milliseconds: 100),
-                (timer) {
-                  if (mounted) {
-                    setState(() {
-                      _sosHoldTicks++;
-                      if (_sosHoldTicks >= 50) {
-                        _sosHoldTimer?.cancel();
-                        _sosFired = true;
-                        _triggerSOS();
-                      }
-                    });
-                  }
-                },
-              );
-            },
-            onTapUp: (_) => _cancelHold(),
-            onTapCancel: () => _cancelHold(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.criticalRed, width: 2),
-                boxShadow: [
-                  if (_sosHoldTicks > 0)
-                    BoxShadow(
-                      color: AppColors.criticalRed.withOpacity(0.3),
-                      blurRadius: 10,
-                      spreadRadius: progress * 5,
-                    ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (!_sosFired && _sosHoldTicks > 0)
-                    Positioned.fill(
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: progress,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.criticalRed.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Baseline(
-                        baseline: 30,
-                        baselineType: TextBaseline.alphabetic,
-                        child: Text(
-                          '*',
-                          style: TextStyle(
-                            color: AppColors.criticalRed,
-                            fontSize: 64,
-                            fontWeight: FontWeight.w900,
-                            height: 0.5,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'HOLD FOR SOS',
-                            style: TextStyle(
-                              color: AppColors.criticalRed,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            (_sosHoldTicks > 0)
-                                ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
-                                : 'Hold for 5 seconds to request help',
-                            style: TextStyle(
-                              color: Colors.black54,
-                              fontSize: 12,
-                              fontWeight: _sosHoldTicks > 0
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }

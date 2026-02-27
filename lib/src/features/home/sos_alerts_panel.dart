@@ -8,6 +8,7 @@ class SosAlertsPanel {
     String? activeLocalUuid,
     VoidCallback? onCancelSos,
     required VoidCallback onGoToSosPanels,
+    void Function(double lat, double lng)? onSosLocationTap,
   }) {
     if (alerts.isEmpty) return;
 
@@ -44,7 +45,7 @@ class SosAlertsPanel {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppColors.criticalRed.withOpacity(0.1),
+                    color: AppColors.criticalRed.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -95,62 +96,89 @@ class SosAlertsPanel {
                         ? DateTime.tryParse(timeStr) ?? DateTime.now()
                         : DateTime.now();
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.grey[900]
-                            : Colors.grey[50],
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).dividerColor.withOpacity(0.1),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: AppColors.criticalRed,
-                            radius: 18,
-                            child: Icon(
-                              Icons.sos,
-                              color: Colors.white,
-                              size: 18,
-                            ),
+                    // Extract location from alert data
+                    final lat = _extractLat(alert);
+                    final lng = _extractLng(alert);
+                    final hasLocation = lat != null && lng != null;
+
+                    return GestureDetector(
+                      onTap: hasLocation && onSosLocationTap != null
+                          ? () {
+                              Navigator.pop(context);
+                              onSosLocationTap(lat, lng);
+                            }
+                          : null,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.grey[900]
+                              : Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha: 0.1),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        ),
+                        child: Row(
+                          children: [
+                            const CircleAvatar(
+                              backgroundColor: AppColors.criticalRed,
+                              radius: 18,
+                              child: Icon(
+                                Icons.sos,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    type,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Reported by $reporter',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  type,
+                                  '${DateTime.now().difference(time).inMinutes}m ago',
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 15,
+                                    color: AppColors.criticalRed,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                Text(
-                                  'Reported by $reporter',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 13,
+                                if (hasLocation)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 2),
+                                    child: Icon(
+                                      Icons.navigation,
+                                      size: 14,
+                                      color: AppColors.primaryGreen,
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
-                          ),
-                          Text(
-                            '${DateTime.now().difference(time).inMinutes}m ago',
-                            style: const TextStyle(
-                              color: AppColors.criticalRed,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
                   }).toList(),
@@ -221,5 +249,61 @@ class SosAlertsPanel {
         ),
       ),
     );
+  }
+
+  /// Try to extract latitude from alert data
+  static double? _extractLat(Map<String, dynamic> alert) {
+    // Direct lat field
+    final lat = alert['lat'] ?? alert['latitude'];
+    if (lat != null) return double.tryParse(lat.toString());
+
+    // From location field
+    final loc = alert['location'];
+    if (loc is Map) {
+      final locLat = loc['lat'] ?? loc['latitude'] ?? loc['y'];
+      if (locLat != null) return double.tryParse(locLat.toString());
+      // GeoJSON: coordinates [lng, lat]
+      if (loc['coordinates'] is List &&
+          (loc['coordinates'] as List).length >= 2) {
+        return double.tryParse((loc['coordinates'] as List)[1].toString());
+      }
+    }
+
+    // WKT POINT(lng lat)
+    if (loc is String && loc.startsWith('POINT(')) {
+      final parts = loc
+          .replaceFirst('POINT(', '')
+          .replaceFirst(')', '')
+          .split(' ');
+      if (parts.length == 2) return double.tryParse(parts[1]);
+    }
+
+    return null;
+  }
+
+  /// Try to extract longitude from alert data
+  static double? _extractLng(Map<String, dynamic> alert) {
+    final lng = alert['lng'] ?? alert['lon'] ?? alert['longitude'];
+    if (lng != null) return double.tryParse(lng.toString());
+
+    final loc = alert['location'];
+    if (loc is Map) {
+      final locLng = loc['lng'] ?? loc['lon'] ?? loc['longitude'] ?? loc['x'];
+      if (locLng != null) return double.tryParse(locLng.toString());
+      if (loc['coordinates'] is List &&
+          (loc['coordinates'] as List).length >= 2) {
+        return double.tryParse((loc['coordinates'] as List)[0].toString());
+      }
+    }
+
+    if (loc is String && loc.startsWith('POINT(')) {
+      final parts = loc
+          .replaceFirst('POINT(', '')
+          .replaceFirst(')', '')
+          .split(' ');
+      if (parts.length == 2) return double.tryParse(parts[0]);
+    }
+
+    return null;
   }
 }

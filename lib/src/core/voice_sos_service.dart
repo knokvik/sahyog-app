@@ -5,8 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:picovoice_flutter/picovoice_error.dart';
 import 'package:picovoice_flutter/picovoice_manager.dart';
+import 'package:rhino_flutter/rhino.dart';
 import 'package:vibration/vibration.dart';
 
 import 'api_client.dart';
@@ -69,29 +69,25 @@ class VoiceSosService {
     }
 
     // Basic local notification channel (Android); safe no‑op on iOS if unconfigured.
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const initSettings = InitializationSettings(android: androidSettings);
     await _notifications.initialize(initSettings);
 
     try {
       _manager = await PicovoiceManager.create(
-        accessKey: accessKey,
-        keywordPath: keywordPath,
-        wakeWordCallback: _onWakeWord,
-        contextPath: contextPath,
-        inferenceCallback: _onInference,
+        accessKey,
+        keywordPath,
+        _onWakeWord,
+        contextPath,
+        _onInference,
       );
       await _manager!.start();
       _initialized = true;
-      SosLog.event(
-        'VOICE_SOS',
-        'INIT_SUCCESS',
-        'Voice SOS listener started',
-      );
-    } on PvError catch (e) {
-      SosLog.warn('VOICE_SOS_INIT', 'Picovoice error: $e');
+      SosLog.event('VOICE_SOS', 'INIT_SUCCESS', 'Voice SOS listener started');
     } catch (e) {
-      SosLog.warn('VOICE_SOS_INIT', 'Unexpected init error: $e');
+      SosLog.warn('VOICE_SOS_INIT', 'Picovoice error: $e');
     }
   }
 
@@ -114,8 +110,8 @@ class VoiceSosService {
     SosLog.event('VOICE_SOS', 'WAKE_WORD_DETECTED');
   }
 
-  Future<void> _onInference(Inference inference) async {
-    if (!inference.isUnderstood) return;
+  Future<void> _onInference(RhinoInference inference) async {
+    if (inference.isUnderstood != true) return;
     if (_isHandlingIntent) return;
 
     final intent = inference.intent;
@@ -221,12 +217,7 @@ class VoiceSosService {
       );
       const details = NotificationDetails(android: androidDetails);
 
-      await _notifications.show(
-        1001,
-        title,
-        body,
-        details,
-      );
+      await _notifications.show(1001, title, body, details);
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
@@ -235,4 +226,3 @@ class VoiceSosService {
     }
   }
 }
-

@@ -58,7 +58,7 @@ class MeshRelayService {
         _strategy,
         serviceId: _serviceId,
         onEndpointFound: _onEndpointFound,
-        onEndpointLost: _onEndpointLost,
+        onEndpointLost: (id) => _onEndpointLost(id),
       );
     } catch (e) {
       SosLog.warn('MESH', 'Failed to start Nearby: $e');
@@ -96,8 +96,10 @@ class MeshRelayService {
       if (incidents.isEmpty) return;
 
       // Prefer direct incidents; if not, still broadcast the earliest one.
-      final SosIncident incident =
-          incidents.firstWhere((i) => i.source == 'direct', orElse: () => incidents.first);
+      final SosIncident incident = incidents.firstWhere(
+        (i) => i.source == 'direct',
+        orElse: () => incidents.first,
+      );
 
       if (incident.hopCount > _maxHopCount) return;
 
@@ -139,8 +141,10 @@ class MeshRelayService {
     } catch (_) {}
   }
 
-  void _onEndpointLost(String id) {
-    _connectedEndpoints.remove(id);
+  void _onEndpointLost(String? id) {
+    if (id != null) {
+      _connectedEndpoints.remove(id);
+    }
   }
 
   void _onConnectionInitiated(String id, ConnectionInfo info) {
@@ -169,8 +173,10 @@ class MeshRelayService {
     }
   }
 
-  void _onDisconnected(String id) {
-    _connectedEndpoints.remove(id);
+  void _onDisconnected(String? id) {
+    if (id != null) {
+      _connectedEndpoints.remove(id);
+    }
   }
 
   Future<void> _handleIncomingBytes(String endpointId, List<int> bytes) async {
@@ -209,7 +215,10 @@ class MeshRelayService {
       );
 
       await db.insertSosIncident(relayIncident);
-      await db.atomicUpdateIncident(relayIncident.uuid, status: SosStatus.activeOffline);
+      await db.atomicUpdateIncident(
+        relayIncident.uuid,
+        status: SosStatus.activeOffline,
+      );
 
       await _showIncomingNotification(pkt);
 
@@ -286,4 +295,3 @@ class MeshRelayService {
     await perms.request();
   }
 }
-
