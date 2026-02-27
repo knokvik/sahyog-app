@@ -172,16 +172,9 @@ class _InlineSearchResultsState extends State<InlineSearchResults> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 64),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 16),
                 Icon(Icons.search, size: 28, color: Colors.grey.shade400),
                 const SizedBox(width: 8),
                 Text(
@@ -192,6 +185,8 @@ class _InlineSearchResultsState extends State<InlineSearchResults> {
                     color: Colors.grey.shade500,
                   ),
                 ),
+                const SizedBox(width: 12),
+                const _ThreeDotsLoader(),
               ],
             ),
           ],
@@ -206,7 +201,7 @@ class _InlineSearchResultsState extends State<InlineSearchResults> {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(32.0),
-              child: CircularProgressIndicator(),
+              child: _ThreeDotsLoader(),
             ),
           );
         }
@@ -230,7 +225,6 @@ class _InlineSearchResultsState extends State<InlineSearchResults> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(height: 64),
                 Icon(Icons.search_off, size: 56, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
                 Text(
@@ -299,6 +293,54 @@ class _InlineSearchResultsState extends State<InlineSearchResults> {
             ],
             const SizedBox(height: 100), // FAB padding padding
           ],
+        );
+      },
+    );
+  }
+}
+
+class _ThreeDotsLoader extends StatefulWidget {
+  const _ThreeDotsLoader();
+
+  @override
+  State<_ThreeDotsLoader> createState() => _ThreeDotsLoaderState();
+}
+
+class _ThreeDotsLoaderState extends State<_ThreeDotsLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1000),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final delay = i * 0.2;
+            double v = (_ctrl.value - delay) % 1.0;
+            if (v < 0) v += 1.0;
+            final opacity = (v < 0.5) ? (v * 2) : (2 - v * 2);
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: AppColors.primaryGreen.withOpacity(0.3 + 0.7 * opacity),
+                shape: BoxShape.circle,
+              ),
+            );
+          }),
         );
       },
     );
