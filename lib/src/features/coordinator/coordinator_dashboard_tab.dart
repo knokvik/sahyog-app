@@ -71,7 +71,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
         widget.api.get('/api/v1/coordinator/context'),
         widget.api.get('/api/v1/coordinator/sos'),
         widget.api.get('/api/v1/coordinator/tasks'),
-        widget.api.get('/api/v1/coordinator/zones'),
+        widget.api.get('/api/v1/coordinator/my-zones'),
       ]);
 
       if (!mounted) return;
