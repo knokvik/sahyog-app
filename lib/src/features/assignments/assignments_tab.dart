@@ -134,9 +134,50 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       await _load();
     } catch (e) {
       if (!mounted) return;
+      // Handle new validation errors from backend
+      final errorMsg = e.toString();
+      String displayMsg = 'Failed to update task: $e';
+      
+      if (errorMsg.contains('training')) {
+        displayMsg = 'This task requires specific training. Please contact a coordinator.';
+      } else if (errorMsg.contains('distance') || errorMsg.contains('far')) {
+        displayMsg = 'You are too far from this task location. Maximum distance is 50km.';
+      } else if (errorMsg.contains('maximum') || errorMsg.contains('3 active tasks')) {
+        displayMsg = 'You have reached the maximum of 3 active tasks. Complete existing tasks first.';
+      }
+      
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to update task: $e')));
+      ).showSnackBar(SnackBar(content: Text(displayMsg), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _voteOnTaskCompletion(String taskId, String vote) async {
+    try {
+      await widget.api.post(
+        '/api/v1/tasks/$taskId/vote-completion',
+        body: {'vote': vote},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Vote recorded: $vote')));
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      // Handle self-voting restriction
+      final errorMsg = e.toString();
+      String displayMsg = 'Failed to vote: $e';
+      
+      if (errorMsg.contains('own task') || errorMsg.contains('cannot vote')) {
+        displayMsg = 'You cannot vote on completion of your own task. Other volunteers or coordinators must verify your work.';
+      } else if (errorMsg.contains('status') || errorMsg.contains('completed')) {
+        displayMsg = 'Can only vote to confirm completion on tasks marked as completed by the volunteer.';
+      }
+      
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(displayMsg), backgroundColor: Colors.red));
     }
   }
 
@@ -304,14 +345,44 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   Widget _buildPendingTasks() {
+    // Count active tasks for the current user
+    final activeTasksCount = _pendingTasks.where((t) {
+      final status = (t['status'] ?? '').toString();
+      return ['pending', 'accepted', 'in_progress'].contains(status) &&
+             t['volunteer_id'] == widget.user.id;
+    }).length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'My Active Tasks',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'My Active Tasks',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            // Show active task count indicator
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: activeTasksCount >= 3 
+                    ? Colors.red.withOpacity(0.1) 
+                    : Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '$activeTasksCount/3 active',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: activeTasksCount >= 3 ? Colors.red : Colors.blue,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         if (_pendingTasks.isEmpty)
@@ -326,6 +397,9 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
             final status = (task['status'] ?? 'pending').toString();
             final volunteerId = task['volunteer_id'];
             final isUnassigned = volunteerId == null;
+            final isMyTask = volunteerId == widget.user.id;
+            final taskType = (task['type'] ?? '').toString().toLowerCase();
+            final requiresSpecialTraining = ['medical', 'rescue', 'fire', 'evacuation'].contains(taskType);
 
             return Card(
               margin: const EdgeInsets.only(bottom: 8),
@@ -364,16 +438,31 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                         (task['title'] ?? task['type'] ?? 'Task').toString(),
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      subtitle: Text(
-                        isUnassigned
-                            ? 'Unassigned • Click to Accept'
-                            : 'Status: $status',
-                        style: TextStyle(
-                          color: isUnassigned ? Colors.orange[800] : null,
-                          fontWeight: isUnassigned ? FontWeight.bold : null,
-                        ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isUnassigned
+                                ? 'Unassigned • Click to Accept'
+                                : 'Status: $status',
+                            style: TextStyle(
+                              color: isUnassigned ? Colors.orange[800] : null,
+                              fontWeight: isUnassigned ? FontWeight.bold : null,
+                            ),
+                          ),
+                          // Show skill requirement for critical tasks
+                          if (requiresSpecialTraining && isUnassigned)
+                            Text(
+                              'Requires $taskType training',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                        ],
                       ),
-                      trailing: (!isUnassigned && status == 'accepted')
+                      trailing: (!isUnassigned && status == 'accepted' && isMyTask)
                           ? IconButton(
                               icon: const Icon(
                                 Icons.check_circle_outline,
@@ -385,7 +474,30 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                                 'completed',
                               ),
                             )
-                          : const Icon(Icons.chevron_right),
+                          // Show vote buttons for completed tasks (not own task)
+                          : (!isUnassigned && status == 'completed' && !isMyTask)
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.check_circle, color: Colors.green),
+                                      tooltip: 'Confirm Completion',
+                                      onPressed: () => _voteOnTaskCompletion(
+                                        (task['id'] ?? '').toString(),
+                                        'completed',
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.cancel, color: Colors.red),
+                                      tooltip: 'Reject Completion',
+                                      onPressed: () => _voteOnTaskCompletion(
+                                        (task['id'] ?? '').toString(),
+                                        'rejected',
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const Icon(Icons.chevron_right),
                     ),
                     if (!isUnassigned &&
                         (status == 'pending' || status == 'assigned'))
@@ -418,10 +530,12 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: FilledButton.tonal(
-                                onPressed: () => _updateTaskStatus(
-                                  (task['id'] ?? '').toString(),
-                                  'accepted',
-                                ),
+                                onPressed: activeTasksCount >= 3 
+                                    ? null  // Disable if at max tasks
+                                    : () => _updateTaskStatus(
+                                        (task['id'] ?? '').toString(),
+                                        'accepted',
+                                      ),
                                 style: FilledButton.styleFrom(
                                   backgroundColor: AppColors.primaryGreen,
                                   foregroundColor: Colors.white,

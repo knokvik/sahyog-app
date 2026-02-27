@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -14,6 +15,9 @@ import '../../core/models.dart';
 import '../../theme/app_colors.dart';
 import '../../core/connectivity_service.dart';
 import '../../core/socket_service.dart';
+import '../../core/voice_sos_service.dart';
+import '../../core/mesh_relay_service.dart';
+import '../../core/mesh_foreground_task.dart';
 import '../assignments/assignments_tab.dart';
 import '../coordinator/coordinator_dashboard_tab.dart';
 import '../coordinator/coordinator_operations_tab.dart';
@@ -52,6 +56,9 @@ class _AuthGateState extends State<AuthGate> {
   void dispose() {
     ConnectivityService.instance.dispose();
     SocketService.instance.dispose();
+    VoiceSosService.instance.dispose();
+    MeshRelayService.instance.stop();
+    FlutterForegroundTask.stopService();
     super.dispose();
   }
 
@@ -113,6 +120,35 @@ class _AuthGateState extends State<AuthGate> {
         context,
         user.isCoordinator || user.isAdmin,
       );
+
+      // Start mesh relay (Android only). Runs alongside normal retry sync logic.
+      await prefs.setString(
+        'mesh_device_name',
+        user.name.isNotEmpty ? user.name : 'Sahyog',
+      );
+      // Start background mesh relay service (Android foreground service).
+      // This keeps discovery running even when the app is not open.
+      await FlutterForegroundTask.startService(
+        serviceId: 701,
+        notificationTitle: 'Sahyog Mesh Relay',
+        notificationText: 'Listening for nearby SOS (tap to open)',
+        callback: meshStartCallback,
+      );
+
+      // Initialize voice-activated SOS (opt-in via PICOVOICE_ACCESS_KEY).
+      // If the key or models are not configured, this is a no-op.
+      final voiceKey = AppConfig.voiceAccessKey;
+      if (voiceKey != null) {
+        await VoiceSosService.instance.initialize(
+          reporterId: user.id,
+          api: _api,
+          accessKey: voiceKey,
+          // These should point to your bundled Picovoice models.
+          // Make sure the assets exist and are registered in pubspec.yaml.
+          keywordPath: 'assets/hey_sahyog.ppn',
+          contextPath: 'assets/sos_intent.rhn',
+        );
+      }
 
       // Save to cache
       await prefs.setString('cached_user', jsonEncode(user.toJson()));

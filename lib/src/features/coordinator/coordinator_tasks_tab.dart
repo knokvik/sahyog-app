@@ -187,9 +187,17 @@ class _CoordinatorTasksTabState extends State<CoordinatorTasksTab> {
       await _load();
     } catch (e) {
       if (!mounted) return;
+      // Handle new validation errors from backend
+      final errorMsg = e.toString();
+      String displayMsg = 'Update failed: $e';
+      
+      if (errorMsg.contains('foreign key') || errorMsg.contains('not found')) {
+        displayMsg = 'Referenced item not found. Please check IDs and try again.';
+      }
+      
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+      ).showSnackBar(SnackBar(content: Text(displayMsg), backgroundColor: Colors.red));
     }
   }
 

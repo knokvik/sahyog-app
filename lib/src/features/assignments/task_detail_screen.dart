@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/api_client.dart';
 import '../../core/models.dart';
 import '../../theme/app_colors.dart';
@@ -22,6 +23,8 @@ class TaskDetailScreen extends StatefulWidget {
 class _TaskDetailScreenState extends State<TaskDetailScreen> {
   late Map<String, dynamic> _task;
   bool _loading = false;
+  final ImagePicker _picker = ImagePicker();
+  List<XFile> _selectedProofImages = [];
 
   @override
   void initState() {
@@ -48,28 +51,74 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
+        // Handle new validation errors from backend
+        final errorMsg = e.toString();
+        String displayMsg = 'Error: $e';
+        
+        if (errorMsg.contains('training')) {
+          displayMsg = 'This task requires specific training. Please contact a coordinator.';
+        } else if (errorMsg.contains('distance') || errorMsg.contains('far')) {
+          displayMsg = 'You are too far from this task location. Maximum distance is 50km.';
+        } else if (errorMsg.contains('maximum') || errorMsg.contains('3 active tasks')) {
+          displayMsg = 'You have reached the maximum of 3 active tasks. Complete existing tasks first.';
+        }
+        
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ).showSnackBar(SnackBar(content: Text(displayMsg), backgroundColor: Colors.red));
       }
     }
   }
 
+  Future<void> _pickProofImages() async {
+    try {
+      final List<XFile> images = await _picker.pickMultiImage();
+      if (images.isNotEmpty) {
+        setState(() {
+          _selectedProofImages = images;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to pick images: $e')),
+      );
+    }
+  }
+
+  Future<List<String>> _uploadImagesToStorage() async {
+    // TODO: Implement actual image upload to your storage service (e.g., Firebase Storage, S3)
+    // For now, return placeholder URLs - replace with actual upload logic
+    return _selectedProofImages.map((_) => 'https://storage.example.com/proof.jpg').toList();
+  }
+
   Future<void> _uploadProof() async {
-    // Simulated proof upload for now
+    if (_selectedProofImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least one photo as proof'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
     try {
+      // Upload images to storage and get URLs
+      final proofUrls = await _uploadImagesToStorage();
+      
       final updated = await widget.api.patch(
         '/api/v1/tasks/${_task['id']}/status',
         body: {
           'status': 'completed',
-          'proof_images': ['https://example.com/proof.jpg'],
+          'proof_images': proofUrls,
           'persons_helped': 5,
         },
       );
       if (mounted) {
         setState(() {
           _task = updated as Map<String, dynamic>;
+          _selectedProofImages = [];
           _loading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -81,7 +130,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         setState(() => _loading = false);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ).showSnackBar(SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red));
       }
     }
   }
@@ -300,9 +349,36 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       return const Center(child: Text('This task is already completed.'));
     }
 
+    final taskType = (_task['type'] ?? '').toString().toLowerCase();
+    final requiresSpecialTraining = ['medical', 'rescue', 'fire', 'evacuation'].contains(taskType);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Show skill requirement warning for critical tasks
+        if (requiresSpecialTraining && isUnassigned)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'This $taskType task requires specific training.',
+                    style: const TextStyle(color: Colors.orange, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         if (isUnassigned)
           FilledButton.icon(
             onPressed: () => _updateStatus('accepted'),
@@ -313,6 +389,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               backgroundColor: AppColors.primaryGreen,
             ),
           ),
+
         if (isAssignedToMe && status == 'accepted')
           FilledButton.icon(
             onPressed: () => _updateStatus('in_progress'),
@@ -322,7 +399,45 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
           ),
-        if (isAssignedToMe && status == 'in_progress')
+
+        if (isAssignedToMe && status == 'in_progress') ...[
+          // Proof image picker
+          if (_selectedProofImages.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_selectedProofImages.length} image(s) selected',
+                      style: const TextStyle(color: Colors.green, fontSize: 13),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _selectedProofImages = []),
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+            ),
+
+          OutlinedButton.icon(
+            onPressed: _pickProofImages,
+            icon: const Icon(Icons.photo_library),
+            label: Text(_selectedProofImages.isEmpty ? 'Select Proof Photos' : 'Add More Photos'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+          const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _uploadProof,
             icon: const Icon(Icons.cloud_upload),
@@ -332,6 +447,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               backgroundColor: AppColors.primaryGreen,
             ),
           ),
+        ],
+
         const SizedBox(height: 12),
         if (isAssignedToMe)
           OutlinedButton.icon(

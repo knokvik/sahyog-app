@@ -50,6 +50,13 @@ dependencies:
   uuid: ^4.5.1
   flutter_foreground_task: ^8.0.0
   battery_plus: ^6.1.1
+  image_picker: ^1.1.2
+  picovoice_flutter: ^3.0.0
+  flutter_background_service: ^2.0.0
+  flutter_local_notifications: ^17.0.0
+  vibration: ^1.9.0
+  permission_handler: ^11.0.0
+  nearby_connections: ^4.3.0
 
 dev_dependencies:
   flutter_test:

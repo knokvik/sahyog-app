@@ -112,6 +112,10 @@ class SosIncident {
     this.retryCount = 0,
     this.deliveryChannel,
     this.backendId,
+    this.source = 'direct',
+    this.hopCount = 0,
+    this.uuidHash,
+    this.relayDeviceId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : uuid = uuid ?? const Uuid().v4(),
@@ -129,6 +133,10 @@ class SosIncident {
   final int retryCount;
   final String? deliveryChannel;
   final String? backendId;
+  final String source;
+  final int hopCount;
+  final int? uuidHash;
+  final String? relayDeviceId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -141,6 +149,10 @@ class SosIncident {
     String? backendId,
     double? lat,
     double? lng,
+    String? source,
+    int? hopCount,
+    int? uuidHash,
+    String? relayDeviceId,
   }) {
     return SosIncident(
       uuid: uuid,
@@ -154,6 +166,10 @@ class SosIncident {
       retryCount: retryCount ?? this.retryCount,
       deliveryChannel: deliveryChannel ?? this.deliveryChannel,
       backendId: backendId ?? this.backendId,
+      source: source ?? this.source,
+      hopCount: hopCount ?? this.hopCount,
+      uuidHash: uuidHash ?? this.uuidHash,
+      relayDeviceId: relayDeviceId ?? this.relayDeviceId,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
@@ -173,6 +189,10 @@ class SosIncident {
       'retry_count': retryCount,
       'delivery_channel': deliveryChannel,
       'backend_id': backendId,
+      'source': source,
+      'hop_count': hopCount,
+      'uuid_hash': uuidHash,
+      'relay_device_id': relayDeviceId,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -192,6 +212,10 @@ class SosIncident {
       retryCount: (map['retry_count'] as int?) ?? 0,
       deliveryChannel: map['delivery_channel'] as String?,
       backendId: map['backend_id'] as String?,
+      source: (map['source'] as String?) ?? 'direct',
+      hopCount: (map['hop_count'] as int?) ?? 0,
+      uuidHash: map['uuid_hash'] as int?,
+      relayDeviceId: map['relay_device_id'] as String?,
       createdAt:
           DateTime.tryParse(map['created_at'] as String? ?? '') ??
           DateTime.now(),
