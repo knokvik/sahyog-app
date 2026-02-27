@@ -513,8 +513,6 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 8),
-            const _RoleChip(label: 'VOLUNTEER', color: AppColors.primaryGreen),
           ],
         ),
         actions: [
