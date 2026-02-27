@@ -466,12 +466,6 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(
-                                    Icons.emergency,
-                                    color: Colors.white,
-                                    size: 36,
-                                  ),
-                                  const SizedBox(width: 16),
                                   Flexible(
                                     child: Column(
                                       crossAxisAlignment:
@@ -565,16 +559,6 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Text(
-                                      '✱',
-                                      style: TextStyle(
-                                        color: AppColors.criticalRed,
-                                        fontSize: 40,
-                                        fontWeight: FontWeight.w900,
-                                        height: 1.0,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
                                     Flexible(
                                       child: Column(
                                         crossAxisAlignment:

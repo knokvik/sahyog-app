@@ -173,20 +173,26 @@ class _InlineSearchResultsState extends State<InlineSearchResults> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 64),
-            Icon(Icons.search, size: 64, color: Colors.grey.shade300),
-            const SizedBox(height: 16),
-            Text(
-              'Search across the app',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade500,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Find volunteers, tasks, SOS alerts...',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 16),
+                Icon(Icons.search, size: 28, color: Colors.grey.shade400),
+                const SizedBox(width: 8),
+                Text(
+                  'Waiting for search...',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
             ),
           ],
         ),

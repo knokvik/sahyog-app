@@ -132,107 +132,113 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
         children: [
           if (_loading) const LinearProgressIndicator(minHeight: 2),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 10),
-                  AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 300),
-                    crossFadeState: _searchFocus.hasFocus
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    firstChild: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_error.isNotEmpty)
-                          Text(
-                            _error,
-                            style: const TextStyle(
-                              color: AppColors.criticalRed,
+            child: GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 10),
+                    AnimatedCrossFade(
+                      duration: const Duration(milliseconds: 300),
+                      crossFadeState: _searchFocus.hasFocus
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                      firstChild: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_error.isNotEmpty)
+                            Text(
+                              _error,
+                              style: const TextStyle(
+                                color: AppColors.criticalRed,
+                              ),
                             ),
+                          _buildMiniMap(),
+                          const SizedBox(height: 12),
+                          _buildStatsRow(),
+                          const SizedBox(height: 12),
+                          EmergencySosBox(
+                            user: widget.user,
+                            api: widget.api,
+                            onSosTap: () {
+                              final alerts =
+                                  SocketService.instance.liveSosAlerts.value;
+                              if (alerts.isNotEmpty) {
+                                DatabaseHelper.instance
+                                    .getActiveIncident(widget.user.id)
+                                    .then((active) {
+                                      if (context.mounted) {
+                                        SosAlertsPanel.show(
+                                          context: context,
+                                          alerts: alerts,
+                                          activeLocalUuid: active?.uuid,
+                                          onCancelSos: null,
+                                          onGoToSosPanels: () =>
+                                              widget.onNavigate(3),
+                                          onSosLocationTap: (lat, lng) {
+                                            widget.onNavigate(
+                                              1,
+                                              target: LatLng(lat, lng),
+                                            );
+                                          },
+                                        );
+                                      }
+                                    });
+                              }
+                            },
+                            onSosLocationTap: (ll) =>
+                                widget.onNavigate(3, target: ll),
                           ),
-                        _buildMiniMap(),
-                        const SizedBox(height: 12),
-                        _buildStatsRow(),
-                        const SizedBox(height: 12),
-                        EmergencySosBox(
-                          user: widget.user,
+                          const SizedBox(height: 12),
+                          _buildRecentTasks(),
+                          const SizedBox(height: 12),
+                          _buildRecentSos(),
+                          const SizedBox(height: 80), // Padding for FAB
+                        ],
+                      ),
+                      secondChild: SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.7,
+                        child: InlineSearchResults(
                           api: widget.api,
-                          onSosTap: () {
-                            final alerts =
-                                SocketService.instance.liveSosAlerts.value;
-                            if (alerts.isNotEmpty) {
-                              DatabaseHelper.instance
-                                  .getActiveIncident(widget.user.id)
-                                  .then((active) {
-                                    if (context.mounted) {
-                                      SosAlertsPanel.show(
-                                        context: context,
-                                        alerts: alerts,
-                                        activeLocalUuid: active?.uuid,
-                                        onCancelSos: null,
-                                        onGoToSosPanels: () =>
-                                            widget.onNavigate(3),
-                                        onSosLocationTap: (lat, lng) {
-                                          widget.onNavigate(
-                                            1,
-                                            target: LatLng(lat, lng),
-                                          );
-                                        },
-                                      );
-                                    }
-                                  });
+                          query: _searchQuery,
+                          onResultTap: (result) {
+                            _searchFocus.unfocus();
+                            switch (result.category) {
+                              case SearchCategory.volunteer:
+                              case SearchCategory.task:
+                                widget.onNavigate(
+                                  10,
+                                ); // Operations > Tasks / Volunteers
+                                break;
+                              case SearchCategory.sos:
+                                widget.onNavigate(3); // SOS Operations
+                                break;
+                              case SearchCategory.zone:
+                                final lat = double.tryParse(
+                                  (result.raw['center_lat'] ?? '').toString(),
+                                );
+                                final lng = double.tryParse(
+                                  (result.raw['center_lng'] ?? '').toString(),
+                                );
+                                if (lat != null && lng != null) {
+                                  widget.onNavigate(
+                                    1,
+                                    target: LatLng(lat, lng),
+                                  );
+                                } else {
+                                  widget.onNavigate(1);
+                                }
+                                break;
                             }
                           },
-                          onSosLocationTap: (ll) =>
-                              widget.onNavigate(3, target: ll),
                         ),
-                        const SizedBox(height: 12),
-                        _buildRecentTasks(),
-                        const SizedBox(height: 12),
-                        _buildRecentSos(),
-                        const SizedBox(height: 80), // Padding for FAB
-                      ],
-                    ),
-                    secondChild: SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.7,
-                      child: InlineSearchResults(
-                        api: widget.api,
-                        query: _searchQuery,
-                        onResultTap: (result) {
-                          _searchFocus.unfocus();
-                          switch (result.category) {
-                            case SearchCategory.volunteer:
-                            case SearchCategory.task:
-                              widget.onNavigate(
-                                10,
-                              ); // Operations > Tasks / Volunteers
-                              break;
-                            case SearchCategory.sos:
-                              widget.onNavigate(3); // SOS Operations
-                              break;
-                            case SearchCategory.zone:
-                              final lat = double.tryParse(
-                                (result.raw['center_lat'] ?? '').toString(),
-                              );
-                              final lng = double.tryParse(
-                                (result.raw['center_lng'] ?? '').toString(),
-                              );
-                              if (lat != null && lng != null) {
-                                widget.onNavigate(1, target: LatLng(lat, lng));
-                              } else {
-                                widget.onNavigate(1);
-                              }
-                              break;
-                          }
-                        },
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -309,7 +315,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
                 ),
               ),
             ),
-            if (_searchFocus.hasFocus && _searchQuery.isNotEmpty)
+            if (_searchFocus.hasFocus)
               IconButton(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -318,6 +324,9 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
                   setState(() {
                     _searchQuery = '';
                   });
+                  if (_searchQuery.isEmpty) {
+                    _searchFocus.unfocus();
+                  }
                 },
               )
             else
