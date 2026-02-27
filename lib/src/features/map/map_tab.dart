@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/location_service.dart';
@@ -216,6 +218,115 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
     return null;
   }
 
+  Future<void> _showSosNavigationChooser(LatLng destination) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Navigate to SOS Location',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0x1A27B469),
+                    child: Icon(Icons.map, color: AppColors.primaryGreen),
+                  ),
+                  title: const Text('Sahyog Map'),
+                  subtitle: const Text('Focus this SOS on in-app map'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _mapController.move(destination, 16);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0x1A34A853),
+                    child: Icon(Icons.map, color: Color(0xFF34A853)),
+                  ),
+                  title: const Text('Google Maps'),
+                  subtitle: const Text('Turn-by-turn directions'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _launchExternalNavigation(
+                      providerName: 'Google Maps',
+                      appUri: Uri.parse(
+                        'comgooglemaps://?daddr=${destination.latitude},${destination.longitude}&directionsmode=driving',
+                      ),
+                      fallbackUri: Uri.parse(
+                        'https://www.google.com/maps/dir/?api=1&destination=${destination.latitude},${destination.longitude}',
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0x1A007AFF),
+                    child: Icon(Icons.navigation, color: Color(0xFF007AFF)),
+                  ),
+                  title: const Text('Apple Maps'),
+                  subtitle: const Text('Open with Apple Maps'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _launchExternalNavigation(
+                      providerName: 'Apple Maps',
+                      appUri: Uri.parse(
+                        'maps://?daddr=${destination.latitude},${destination.longitude}&dirflg=d',
+                      ),
+                      fallbackUri: Uri.parse(
+                        'http://maps.apple.com/?daddr=${destination.latitude},${destination.longitude}&dirflg=d',
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _launchExternalNavigation({
+    required String providerName,
+    required Uri appUri,
+    required Uri fallbackUri,
+  }) async {
+    try {
+      final openedApp = await launchUrl(
+        appUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (openedApp) return;
+
+      final openedFallback = await launchUrl(
+        fallbackUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!openedFallback && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open $providerName.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Navigation launch failed: $e')));
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -364,7 +475,12 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                               width: 120,
                               height: 60,
                               child: isSos
-                                  ? _SosMarker()
+                                  ? GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () =>
+                                          _showSosNavigationChooser(r.point),
+                                      child: _SosMarker(),
+                                    )
                                   : Column(
                                       children: [
                                         Container(
@@ -434,6 +550,18 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                         ),
                       ),
                     ),
+                  // LEFT-SIDE: Active SOS FAB
+                  Positioned(
+                    left: 16,
+                    bottom: 90,
+                    child: _SosFab(
+                      alerts: _resources.where((r) => r.type == 'SOS').toList(),
+                      onGoToLocation: (LatLng point) {
+                        _mapController.move(point, 16);
+                      },
+                    ),
+                  ),
+                  // RIGHT-SIDE: My Location, Zoom controls
                   Positioned(
                     right: 16,
                     bottom: 90,
@@ -488,6 +616,12 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           },
                           backgroundColor: Colors.white,
                           foregroundColor: AppColors.primaryGreen,
+                          shape: CircleBorder(
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                              width: 0.8,
+                            ),
+                          ),
                           child: const Icon(Icons.gps_fixed),
                         ),
                         const SizedBox(height: 8),
@@ -503,6 +637,12 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           },
                           backgroundColor: Colors.white,
                           foregroundColor: AppColors.primaryGreen,
+                          shape: CircleBorder(
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                              width: 0.8,
+                            ),
+                          ),
                           child: const Icon(Icons.add),
                         ),
                         const SizedBox(height: 8),
@@ -518,6 +658,12 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           },
                           backgroundColor: Colors.white,
                           foregroundColor: AppColors.primaryGreen,
+                          shape: CircleBorder(
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                              width: 0.8,
+                            ),
+                          ),
                           child: const Icon(Icons.remove),
                         ),
                       ],
@@ -853,6 +999,177 @@ class _SosMarkerState extends State<_SosMarker>
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// Left-side FAB that shows a badge with the number of active SOS alerts
+/// and opens a bottom sheet listing them with "Go to Location" actions.
+class _SosFab extends StatelessWidget {
+  const _SosFab({required this.alerts, required this.onGoToLocation});
+
+  final List<_ResourceMarker> alerts;
+  final ValueChanged<LatLng> onGoToLocation;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = alerts.length;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        FloatingActionButton(
+          heroTag: 'map_sos_fab',
+          mini: true,
+          onPressed: () => _showSosSheet(context),
+          backgroundColor: count > 0 ? AppColors.criticalRed : Colors.white,
+          foregroundColor: count > 0 ? Colors.white : AppColors.criticalRed,
+          shape: CircleBorder(
+            side: BorderSide(
+              color: count > 0
+                  ? AppColors.criticalRed.withValues(alpha: 0.3)
+                  : Colors.grey.shade300,
+              width: 0.8,
+            ),
+          ),
+          child: const Icon(Icons.sos, size: 22),
+        ),
+        if (count > 0)
+          Positioned(
+            right: -4,
+            top: -4,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: AppColors.criticalRed,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showSosSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.4,
+          minChildSize: 0.25,
+          maxChildSize: 0.7,
+          builder: (ctx, scrollCtrl) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.sos, color: AppColors.criticalRed),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Active SOS (${alerts.length})',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: alerts.isEmpty
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'No active SOS alerts on the map.',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            controller: scrollCtrl,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            itemCount: alerts.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (ctx, i) {
+                              final sos = alerts[i];
+                              return ListTile(
+                                leading: const CircleAvatar(
+                                  backgroundColor: AppColors.criticalRed,
+                                  child: Icon(
+                                    Icons.sos,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                                title: Text(
+                                  'SOS #${sos.id.length > 8 ? sos.id.substring(0, 8) : sos.id}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${sos.point.latitude.toStringAsFixed(4)}, ${sos.point.longitude.toStringAsFixed(4)}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                trailing: FilledButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    onGoToLocation(sos.point);
+                                  },
+                                  icon: const Icon(Icons.location_on, size: 16),
+                                  label: const Text(
+                                    'Go',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.criticalRed,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    minimumSize: const Size(0, 32),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
