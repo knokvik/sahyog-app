@@ -9,6 +9,7 @@ import '../../theme/app_colors.dart';
 import '../home/emergency_sos_box.dart';
 import '../home/sos_alerts_panel.dart';
 import '../search/app_search_delegate.dart';
+import '../search/app_inline_search.dart';
 import '../../core/socket_service.dart';
 import '../../core/database_helper.dart';
 
@@ -38,6 +39,8 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
     duration: const Duration(seconds: 4),
   )..repeat();
 
+  final FocusNode _searchFocus = FocusNode();
+
   bool _loading = true;
   String _error = '';
   String _searchQuery = '';
@@ -58,12 +61,16 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
     _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted) _load(silent: true);
     });
+    _searchFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
     _glowCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -132,49 +139,99 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
                 children: [
                   _buildHeader(),
                   const SizedBox(height: 10),
-                  if (_error.isNotEmpty)
-                    Text(
-                      _error,
-                      style: const TextStyle(color: AppColors.criticalRed),
+                  AnimatedCrossFade(
+                    duration: const Duration(milliseconds: 300),
+                    crossFadeState: _searchFocus.hasFocus
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    firstChild: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_error.isNotEmpty)
+                          Text(
+                            _error,
+                            style: const TextStyle(
+                              color: AppColors.criticalRed,
+                            ),
+                          ),
+                        _buildMiniMap(),
+                        const SizedBox(height: 12),
+                        _buildStatsRow(),
+                        const SizedBox(height: 12),
+                        EmergencySosBox(
+                          user: widget.user,
+                          api: widget.api,
+                          onSosTap: () {
+                            final alerts =
+                                SocketService.instance.liveSosAlerts.value;
+                            if (alerts.isNotEmpty) {
+                              DatabaseHelper.instance
+                                  .getActiveIncident(widget.user.id)
+                                  .then((active) {
+                                    if (context.mounted) {
+                                      SosAlertsPanel.show(
+                                        context: context,
+                                        alerts: alerts,
+                                        activeLocalUuid: active?.uuid,
+                                        onCancelSos: null,
+                                        onGoToSosPanels: () =>
+                                            widget.onNavigate(3),
+                                        onSosLocationTap: (lat, lng) {
+                                          widget.onNavigate(
+                                            1,
+                                            target: LatLng(lat, lng),
+                                          );
+                                        },
+                                      );
+                                    }
+                                  });
+                            }
+                          },
+                          onSosLocationTap: (ll) =>
+                              widget.onNavigate(3, target: ll),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildRecentTasks(),
+                        const SizedBox(height: 12),
+                        _buildRecentSos(),
+                        const SizedBox(height: 80), // Padding for FAB
+                      ],
                     ),
-                  _buildMiniMap(),
-                  const SizedBox(height: 12),
-                  _buildStatsRow(),
-                  const SizedBox(height: 12),
-                  EmergencySosBox(
-                    user: widget.user,
-                    api: widget.api,
-                    onSosTap: () {
-                      final alerts = SocketService.instance.liveSosAlerts.value;
-                      if (alerts.isNotEmpty) {
-                        DatabaseHelper.instance
-                            .getActiveIncident(widget.user.id)
-                            .then((active) {
-                              if (context.mounted) {
-                                SosAlertsPanel.show(
-                                  context: context,
-                                  alerts: alerts,
-                                  activeLocalUuid: active?.uuid,
-                                  onCancelSos: null,
-                                  onGoToSosPanels: () => widget.onNavigate(3),
-                                  onSosLocationTap: (lat, lng) {
-                                    widget.onNavigate(
-                                      1,
-                                      target: LatLng(lat, lng),
-                                    );
-                                  },
-                                );
+                    secondChild: SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.7,
+                      child: InlineSearchResults(
+                        api: widget.api,
+                        query: _searchQuery,
+                        onResultTap: (result) {
+                          _searchFocus.unfocus();
+                          switch (result.category) {
+                            case SearchCategory.volunteer:
+                            case SearchCategory.task:
+                              widget.onNavigate(
+                                10,
+                              ); // Operations > Tasks / Volunteers
+                              break;
+                            case SearchCategory.sos:
+                              widget.onNavigate(3); // SOS Operations
+                              break;
+                            case SearchCategory.zone:
+                              final lat = double.tryParse(
+                                (result.raw['center_lat'] ?? '').toString(),
+                              );
+                              final lng = double.tryParse(
+                                (result.raw['center_lng'] ?? '').toString(),
+                              );
+                              if (lat != null && lng != null) {
+                                widget.onNavigate(1, target: LatLng(lat, lng));
+                              } else {
+                                widget.onNavigate(1);
                               }
-                            });
-                      }
-                    },
-                    onSosLocationTap: (ll) => widget.onNavigate(3, target: ll),
+                              break;
+                          }
+                        },
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _buildRecentTasks(),
-                  const SizedBox(height: 12),
-                  _buildRecentSos(),
-                  const SizedBox(height: 80), // Padding for FAB
                 ],
               ),
             ),
@@ -185,103 +242,87 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab>
   }
 
   Widget _buildHeader() {
-    return InkWell(
-      onTap: () {
-        showSearch(
-          context: context,
-          delegate: AppSearchDelegate(
-            api: widget.api,
-            onResultTap: (result) {
-              switch (result.category) {
-                case SearchCategory.volunteer:
-                case SearchCategory.task:
-                  widget.onNavigate(10); // Operations > Tasks / Volunteers
-                  break;
-                case SearchCategory.sos:
-                  widget.onNavigate(3); // SOS Operations
-                  break;
-                case SearchCategory.zone:
-                  final lat = double.tryParse(
-                    (result.raw['center_lat'] ?? '').toString(),
-                  );
-                  final lng = double.tryParse(
-                    (result.raw['center_lng'] ?? '').toString(),
-                  );
-                  if (lat != null && lng != null) {
-                    widget.onNavigate(1, target: LatLng(lat, lng));
-                  } else {
-                    widget.onNavigate(1);
-                  }
-                  break;
-              }
-            },
-          ),
-        );
-      },
-      borderRadius: BorderRadius.circular(30),
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-          side: BorderSide(color: Colors.grey.withOpacity(0.3), width: 1),
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(30),
+        side: BorderSide(
+          color: _searchFocus.hasFocus
+              ? AppColors.primaryGreen.withOpacity(0.5)
+              : Colors.grey.withOpacity(0.3),
+          width: 1,
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          child: Row(
-            children: [
-              AnimatedBuilder(
-                animation: _glowCtrl,
-                builder: (context, child) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: SweepGradient(
-                        colors: const [
-                          Colors.transparent,
-                          AppColors.primaryGreen,
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.5, 1.0],
-                        transform: GradientRotation(
-                          _glowCtrl.value * 2 * 3.14159,
-                        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Row(
+          children: [
+            AnimatedBuilder(
+              animation: _glowCtrl,
+              builder: (context, child) {
+                return Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: SweepGradient(
+                      colors: [
+                        Colors.transparent,
+                        _searchFocus.hasFocus
+                            ? AppColors.primaryGreen
+                            : Colors.grey.shade400,
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                      transform: GradientRotation(
+                        _glowCtrl.value * 2 * 3.14159,
                       ),
                     ),
-                    padding: const EdgeInsets.all(2.5),
-                    child: CircleAvatar(
-                      backgroundColor: Colors.white,
-                      radius: 19,
-                      child: CircleAvatar(
-                        backgroundColor: AppColors.primaryGreen,
-                        foregroundColor: Colors.white,
-                        radius: 17,
-                        child: Text(
-                          widget.user.name.isNotEmpty
-                              ? widget.user.name[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: TextField(
-                  enabled: false,
-                  decoration: InputDecoration(
-                    hintText: 'Search alerts, tasks...',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
                   ),
+                  padding: const EdgeInsets.all(2.5),
+                  child: CircleAvatar(
+                    backgroundColor: Colors.white,
+                    radius: 19,
+                    child: CircleAvatar(
+                      backgroundColor: AppColors.primaryGreen,
+                      foregroundColor: Colors.white,
+                      radius: 17,
+                      child: Text(
+                        widget.user.name.isNotEmpty
+                            ? widget.user.name[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                focusNode: _searchFocus,
+                onChanged: (val) => setState(() => _searchQuery = val),
+                decoration: const InputDecoration(
+                  hintText: 'Search alerts, tasks...',
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
                 ),
               ),
+            ),
+            if (_searchFocus.hasFocus && _searchQuery.isNotEmpty)
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.clear, color: Colors.grey),
+                onPressed: () {
+                  setState(() {
+                    _searchQuery = '';
+                  });
+                },
+              )
+            else
               const Icon(Icons.search, color: Colors.grey),
-            ],
-          ),
+          ],
         ),
       ),
     );
