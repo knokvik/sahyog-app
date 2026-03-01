@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -65,6 +65,7 @@ class DatabaseHelper {
         hop_count INTEGER DEFAULT 0,
         uuid_hash INTEGER,
         relay_device_id TEXT,
+        family_contacts TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -123,6 +124,14 @@ class DatabaseHelper {
       try {
         await db.execute(
           'ALTER TABLE sos_incidents ADD COLUMN relay_device_id TEXT',
+        );
+      } catch (_) {}
+    }
+    if (oldVersion < 5) {
+      // Add family contacts column for mesh relay
+      try {
+        await db.execute(
+          'ALTER TABLE sos_incidents ADD COLUMN family_contacts TEXT',
         );
       } catch (_) {}
     }

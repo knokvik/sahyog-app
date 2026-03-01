@@ -17,6 +17,9 @@ class MeshSosPacket {
     this.lat,
     this.lng,
     this.hopCount = 0,
+    this.reporterName,
+    this.reporterPhone,
+    this.familyContacts = const [],
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -26,20 +29,36 @@ class MeshSosPacket {
   final double? lat;
   final double? lng;
   final int hopCount;
+  final String? reporterName;
+  final String? reporterPhone;
+  final List<Map<String, dynamic>> familyContacts;
   final DateTime createdAt;
 
   Map<String, dynamic> toJson() => {
-    'v': 1,
+    'v': 2,
     'uuid': uuid,
     'type': type,
     'description': description,
     'lat': lat,
     'lng': lng,
     'hop': hopCount,
+    'rn': reporterName,
+    'rp': reporterPhone,
+    'fc': familyContacts,
     'ts': createdAt.toIso8601String(),
   };
 
   factory MeshSosPacket.fromJson(Map<String, dynamic> json) {
+    List<Map<String, dynamic>> parseFc(dynamic raw) {
+      if (raw is List) {
+        return raw
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return [];
+    }
+
     return MeshSosPacket(
       uuid: (json['uuid'] ?? '').toString(),
       type: (json['type'] ?? 'Emergency').toString(),
@@ -47,6 +66,9 @@ class MeshSosPacket {
       lat: (json['lat'] is num) ? (json['lat'] as num).toDouble() : null,
       lng: (json['lng'] is num) ? (json['lng'] as num).toDouble() : null,
       hopCount: (json['hop'] is num) ? (json['hop'] as num).toInt() : 0,
+      reporterName: json['rn']?.toString(),
+      reporterPhone: json['rp']?.toString(),
+      familyContacts: parseFc(json['fc']),
       createdAt: DateTime.tryParse((json['ts'] ?? '').toString()),
     );
   }

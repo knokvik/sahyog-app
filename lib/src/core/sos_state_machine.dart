@@ -116,6 +116,7 @@ class SosIncident {
     this.hopCount = 0,
     this.uuidHash,
     this.relayDeviceId,
+    this.familyContacts,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : uuid = uuid ?? const Uuid().v4(),
@@ -137,6 +138,7 @@ class SosIncident {
   final int hopCount;
   final int? uuidHash;
   final String? relayDeviceId;
+  final String? familyContacts; // JSON-encoded list of {name, phone, relation}
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -153,6 +155,7 @@ class SosIncident {
     int? hopCount,
     int? uuidHash,
     String? relayDeviceId,
+    String? familyContacts,
   }) {
     return SosIncident(
       uuid: uuid,
@@ -170,6 +173,7 @@ class SosIncident {
       hopCount: hopCount ?? this.hopCount,
       uuidHash: uuidHash ?? this.uuidHash,
       relayDeviceId: relayDeviceId ?? this.relayDeviceId,
+      familyContacts: familyContacts ?? this.familyContacts,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
@@ -193,6 +197,7 @@ class SosIncident {
       'hop_count': hopCount,
       'uuid_hash': uuidHash,
       'relay_device_id': relayDeviceId,
+      'family_contacts': familyContacts,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -216,6 +221,7 @@ class SosIncident {
       hopCount: (map['hop_count'] as int?) ?? 0,
       uuidHash: map['uuid_hash'] as int?,
       relayDeviceId: map['relay_device_id'] as String?,
+      familyContacts: map['family_contacts'] as String?,
       createdAt:
           DateTime.tryParse(map['created_at'] as String? ?? '') ??
           DateTime.now(),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -12,6 +13,7 @@ import 'ble_payload_codec.dart';
 import 'database_helper.dart';
 import 'sos_state_machine.dart';
 import 'sos_sync_engine.dart';
+import '../features/home/mesh_ui_panels.dart';
 
 class MeshRelayService {
   MeshRelayService._();
@@ -25,6 +27,11 @@ class MeshRelayService {
 
   final Set<String> _connectedEndpoints = <String>{};
   final Set<String> _seenUuids = <String>{};
+  final Set<String> _sentUuids =
+      <String>{}; // Track UUIDs we've successfully relayed
+
+  /// Set this from your app's root widget so the mesh service can show bottom sheets.
+  GlobalKey<NavigatorState>? navigatorKey;
 
   Timer? _broadcastTimer;
   bool _running = false;
@@ -91,21 +98,34 @@ class MeshRelayService {
   Future<void> _broadcastActiveOfflineIfAny() async {
     try {
       final db = DatabaseHelper.instance;
-      // Any active_offline incident (direct) should be broadcast if not synced.
       final incidents = await db.getSyncableIncidents(SosSyncEngine.maxRetries);
       if (incidents.isEmpty) return;
 
-      // Prefer direct incidents; if not, still broadcast the earliest one.
       final SosIncident incident = incidents.firstWhere(
         (i) => i.source == 'direct',
         orElse: () => incidents.first,
       );
 
       if (incident.hopCount > _maxHopCount) return;
-
-      // Only broadcast when we have at least one connected endpoint; otherwise
-      // discovery/advertising will connect naturally.
       if (_connectedEndpoints.isEmpty) return;
+
+      // Load reporter info from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final reporterName = prefs.getString('user_name') ?? '';
+      final reporterPhone = prefs.getString('user_phone') ?? '';
+      List<Map<String, dynamic>> familyContacts = [];
+      try {
+        final fcJson = prefs.getString('family_contacts');
+        if (fcJson != null && fcJson.isNotEmpty) {
+          final decoded = jsonDecode(fcJson);
+          if (decoded is List) {
+            familyContacts = decoded
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+          }
+        }
+      } catch (_) {}
 
       final packet = MeshSosPacket(
         uuid: incident.uuid,
@@ -114,14 +134,25 @@ class MeshRelayService {
         lat: incident.lat,
         lng: incident.lng,
         hopCount: incident.hopCount,
+        reporterName: reporterName,
+        reporterPhone: reporterPhone,
+        familyContacts: familyContacts,
         createdAt: incident.createdAt,
       );
 
       final bytes = utf8.encode(jsonEncode(packet.toJson()));
+      bool relaySent = false;
       for (final endpointId in _connectedEndpoints) {
         try {
           await Nearby().sendBytesPayload(endpointId, bytes);
+          relaySent = true;
         } catch (_) {}
+      }
+
+      // Show sender success panel (only once per UUID)
+      if (relaySent && !_sentUuids.contains(incident.uuid)) {
+        _sentUuids.add(incident.uuid);
+        _showSenderPanel();
       }
     } catch (e) {
       SosLog.warn('MESH_BROADCAST', '$e');
@@ -200,6 +231,12 @@ class MeshRelayService {
         return;
       }
 
+      // Encode family contacts as JSON string for SQLite
+      String? familyContactsJson;
+      if (pkt.familyContacts.isNotEmpty) {
+        familyContactsJson = jsonEncode(pkt.familyContacts);
+      }
+
       final relayIncident = SosIncident(
         uuid: pkt.uuid,
         reporterId: _meshReporterId,
@@ -212,6 +249,7 @@ class MeshRelayService {
         hopCount: pkt.hopCount + 1,
         uuidHash: fnv1a32(pkt.uuid),
         deliveryChannel: 'mesh',
+        familyContacts: familyContactsJson,
       );
 
       await db.insertSosIncident(relayIncident);
@@ -220,9 +258,12 @@ class MeshRelayService {
         status: SosStatus.activeOffline,
       );
 
+      // Show Apple-style receiver relay panel
+      _showReceiverPanel(pkt.type);
+
       await _showIncomingNotification(pkt);
 
-      // Trigger the existing retrying sync engine (keeps current behaviour).
+      // Trigger the existing retrying sync engine.
       await SosSyncEngine.instance.syncAll();
 
       // Re-broadcast for multi-hop reach.
@@ -233,6 +274,9 @@ class MeshRelayService {
         lat: pkt.lat,
         lng: pkt.lng,
         hopCount: pkt.hopCount + 1,
+        reporterName: pkt.reporterName,
+        reporterPhone: pkt.reporterPhone,
+        familyContacts: pkt.familyContacts,
         createdAt: pkt.createdAt,
       );
       final outBytes = utf8.encode(jsonEncode(rebroadcast.toJson()));
@@ -293,5 +337,21 @@ class MeshRelayService {
       Permission.notification,
     ];
     await perms.request();
+  }
+
+  // ── UI Panel Helpers ────────────────────────────────────────
+
+  void _showSenderPanel() {
+    final ctx = navigatorKey?.currentContext;
+    if (ctx != null) {
+      showSenderSuccessPanel(ctx);
+    }
+  }
+
+  void _showReceiverPanel(String sosType) {
+    final ctx = navigatorKey?.currentContext;
+    if (ctx != null) {
+      showReceiverRelayPanel(ctx, sosType: sosType);
+    }
   }
 }

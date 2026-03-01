@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/socket_service.dart';
 import '../../core/sos_sync_engine.dart';
 import '../../core/database_helper.dart';
@@ -115,13 +116,24 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
       lng = pos.longitude;
     } catch (_) {}
 
-    // 2. Create SOS incident
+    // 2. Load family contacts from SharedPreferences
+    String? familyContactsJson;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final fcStr = prefs.getString('family_contacts');
+      if (fcStr != null && fcStr.isNotEmpty) {
+        familyContactsJson = fcStr;
+      }
+    } catch (_) {}
+
+    // 3. Create SOS incident
     final incident = SosIncident(
       reporterId: widget.user.id,
       lat: lat,
       lng: lng,
       type: 'Emergency',
       status: SosStatus.activating,
+      familyContacts: familyContactsJson,
     );
 
     // 3. Save to SQLite -> transition offline
