@@ -15,6 +15,7 @@ import '../../core/models.dart';
 import '../../theme/app_colors.dart';
 import '../../core/connectivity_service.dart';
 import '../../core/socket_service.dart';
+import '../../core/live_location_service.dart';
 import '../../core/voice_sos_service.dart';
 import '../../core/mesh_relay_service.dart';
 import '../../core/mesh_foreground_task.dart';
@@ -59,6 +60,7 @@ class _AuthGateState extends State<AuthGate> {
   void dispose() {
     ConnectivityService.instance.dispose();
     SocketService.instance.dispose();
+    LiveLocationService.instance.stop();
     VoiceSosService.instance.dispose();
     MeshRelayService.instance.stop();
     OfflineTaskQueue.instance.dispose();
@@ -130,6 +132,13 @@ class _AuthGateState extends State<AuthGate> {
       SocketService.instance.initialize(
         context,
         user.isCoordinator || user.isAdmin,
+      );
+
+      // Start live location tracking (sends every 5s via socket)
+      LiveLocationService.instance.start(
+        userId: user.id,
+        role: user.role,
+        socket: SocketService.instance.socket,
       );
 
       // Start mesh relay (Android only). Runs alongside normal retry sync logic.
@@ -347,6 +356,7 @@ class _UserAppShellState extends State<UserAppShell> {
         ),
         api: widget.api,
         initialTarget: _mapTarget,
+        detailedHeatmap: false,
       ),
       MissingTab(
         key: ValueKey('u_missing_${_index}_${_refreshNotifier.value}'),
@@ -474,6 +484,7 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
         ),
         api: widget.api,
         initialTarget: _mapTarget,
+        detailedHeatmap: widget.user.isAdmin || widget.user.isCoordinator,
       ),
       CombinedSosTab(
         key: ValueKey('sos_${_index}_${_refreshNotifier.value}'),
@@ -637,6 +648,7 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
         ),
         api: widget.api,
         initialTarget: _mapTarget,
+        detailedHeatmap: true,
       ),
       CoordinatorOperationsTab(
         key: ValueKey('c_ops_${_operationsTabIndex}_${_refreshNotifier.value}'),
