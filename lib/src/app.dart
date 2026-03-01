@@ -1,7 +1,9 @@
 import 'package:clerk_flutter/clerk_flutter.dart';
-import 'package:clerk_flutter/src/widgets/authentication/clerk_oauth_panel.dart';
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:clerk_flutter/src/widgets/authentication/clerk_sign_in_panel.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:uuid/uuid.dart';
 import 'package:sahyog_app/src/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -154,7 +156,7 @@ class _CustomSignInArea extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 32),
-          ClerkOAuthPanel(),
+          const _NativeGoogleSignInButton(),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Row(
@@ -177,6 +179,90 @@ class _CustomSignInArea extends StatelessWidget {
           ),
           ClerkSignInPanel(),
         ],
+      ),
+    );
+  }
+}
+
+class _NativeGoogleSignInButton extends StatefulWidget {
+  const _NativeGoogleSignInButton();
+
+  @override
+  State<_NativeGoogleSignInButton> createState() =>
+      _NativeGoogleSignInButtonState();
+}
+
+class _NativeGoogleSignInButtonState extends State<_NativeGoogleSignInButton> {
+  bool _isLoading = false;
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isLoading = true);
+    try {
+      const clientId = String.fromEnvironment('google_client_id');
+      final google = GoogleSignIn.instance;
+      await google.initialize(
+        serverClientId: clientId.isEmpty ? null : clientId,
+        nonce: const Uuid().v4(),
+      );
+      final account = await google.authenticate(
+        scopeHint: const ['openid', 'email', 'profile'],
+      );
+
+      final authState = ClerkAuth.of(context, listen: false);
+      await authState.attemptSignIn(
+        strategy: clerk.Strategy.oauthTokenGoogle,
+        token: account.authentication.idToken,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Google Sign-In Failed: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(12.0),
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    return InkWell(
+      onTap: _handleGoogleSignIn,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 48,
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey[300]!),
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.white,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.network(
+              'https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg',
+              height: 24,
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Sign in with Google',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: Color(0xFF334155),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
