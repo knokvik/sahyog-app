@@ -182,6 +182,8 @@ class SosSyncEngine {
               ? incident.lng
               : 73.8567,
           'client_uuid': incident.uuid,
+          'source': incident.source,
+          'hop_count': incident.hopCount,
         };
 
         if (incident.description != null) {

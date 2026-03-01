@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/api_client.dart';
 import '../../core/models.dart';
+import '../../core/offline_task_queue.dart';
 import '../../theme/app_colors.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -22,6 +24,8 @@ class TaskDetailScreen extends StatefulWidget {
 class _TaskDetailScreenState extends State<TaskDetailScreen> {
   late Map<String, dynamic> _task;
   bool _loading = false;
+  final ImagePicker _picker = ImagePicker();
+  List<XFile> _selectedProofImages = [];
 
   @override
   void initState() {
@@ -48,28 +52,121 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        final errorMsg = e.toString();
+
+        // If it's a network error, queue for offline sync
+        if (errorMsg.contains('SocketException') ||
+            errorMsg.contains('Connection') ||
+            errorMsg.contains('timed out') ||
+            await OfflineTaskQueue.instance.isOffline) {
+          await OfflineTaskQueue.instance.enqueue(
+            taskId: _task['id'].toString(),
+            action: 'update_status',
+            payload: {'status': status},
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Offline — saved locally. Will sync when online.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+
+        String displayMsg = 'Error: $e';
+
+        if (errorMsg.contains('training')) {
+          displayMsg =
+              'This task requires specific training. Please contact a coordinator.';
+        } else if (errorMsg.contains('distance') || errorMsg.contains('far')) {
+          displayMsg =
+              'You are too far from this task location. Maximum distance is 50km.';
+        } else if (errorMsg.contains('maximum') ||
+            errorMsg.contains('3 active tasks')) {
+          displayMsg =
+              'You have reached the maximum of 3 active tasks. Complete existing tasks first.';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(displayMsg), backgroundColor: Colors.red),
+        );
       }
     }
   }
 
+  Future<void> _pickProofImages() async {
+    try {
+      final List<XFile> images = await _picker.pickMultiImage();
+      if (images.isNotEmpty) {
+        setState(() {
+          _selectedProofImages = images;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to pick images: $e')));
+    }
+  }
+
+  Future<List<String>> _uploadImagesToStorage() async {
+    final taskId = _task['id']?.toString() ?? 'general';
+    final result = await widget.api.uploadFiles(
+      '/api/v1/uploads/task-proof',
+      fieldName: 'images',
+      filePaths: _selectedProofImages.map((f) => f.path).toList(),
+      query: {'task_id': taskId},
+    );
+    if (result is Map && result['urls'] is List) {
+      return (result['urls'] as List).cast<String>();
+    }
+    return [];
+  }
+
   Future<void> _uploadProof() async {
-    // Simulated proof upload for now
+    if (_selectedProofImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least one photo as proof'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
     try {
+      // Upload images to Supabase Storage via backend
+      final proofUrls = await _uploadImagesToStorage();
+      if (proofUrls.isEmpty) {
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Upload returned no URLs'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
       final updated = await widget.api.patch(
         '/api/v1/tasks/${_task['id']}/status',
         body: {
           'status': 'completed',
-          'proof_images': ['https://example.com/proof.jpg'],
+          'proof_images': proofUrls,
           'persons_helped': 5,
         },
       );
       if (mounted) {
         setState(() {
           _task = updated as Map<String, dynamic>;
+          _selectedProofImages = [];
           _loading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -79,9 +176,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -138,9 +238,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final status = (_task['status'] ?? 'pending').toString();
-    final isAssignedToMe = _task['volunteer_id'] == widget.user.id;
-    final isUnassigned = _task['volunteer_id'] == null;
+    final status = (_task['status'] ?? 'pending').toString().toLowerCase();
+    final volunteerId = (_task['volunteer_id'] ?? '').toString();
+    final isAssignedToMe =
+        volunteerId.isNotEmpty && volunteerId == widget.user.id;
+    final isUnassigned = _task['volunteer_id'] == null || volunteerId.isEmpty;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Task Details')),
@@ -300,9 +402,46 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       return const Center(child: Text('This task is already completed.'));
     }
 
+    final taskType = (_task['type'] ?? '').toString().toLowerCase();
+    final requiresSpecialTraining = [
+      'medical',
+      'rescue',
+      'fire',
+      'evacuation',
+    ].contains(taskType);
+
+    // If the volunteer has this task visible and it's in_progress,
+    // they should be able to upload proof even if the ID comparison
+    // is uncertain (volunteer_id might be set by the coordinator).
+    final canAct = isAssignedToMe || (widget.user.isVolunteer && !isUnassigned);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Show skill requirement warning for critical tasks
+        if (requiresSpecialTraining && isUnassigned)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'This $taskType task requires specific training.',
+                    style: const TextStyle(color: Colors.orange, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         if (isUnassigned)
           FilledButton.icon(
             onPressed: () => _updateStatus('accepted'),
@@ -313,7 +452,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               backgroundColor: AppColors.primaryGreen,
             ),
           ),
-        if (isAssignedToMe && status == 'accepted')
+
+        if (canAct && status == 'accepted')
           FilledButton.icon(
             onPressed: () => _updateStatus('in_progress'),
             icon: const Icon(Icons.play_arrow),
@@ -322,7 +462,89 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
           ),
-        if (isAssignedToMe && status == 'in_progress')
+
+        if (canAct && status == 'in_progress') ...[
+          // Proof image picker section
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.primaryGreen.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.primaryGreen.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.camera_alt,
+                      color: AppColors.primaryGreen,
+                      size: 20,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Upload Proof to Complete',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: AppColors.primaryGreen,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Take photos of the completed work as proof for the coordinator.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+
+          if (_selectedProofImages.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_selectedProofImages.length} image(s) selected',
+                      style: const TextStyle(color: Colors.green, fontSize: 13),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _selectedProofImages = []),
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+            ),
+
+          OutlinedButton.icon(
+            onPressed: _pickProofImages,
+            icon: const Icon(Icons.photo_library),
+            label: Text(
+              _selectedProofImages.isEmpty
+                  ? 'Select Proof Photos'
+                  : 'Add More Photos',
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+          const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _uploadProof,
             icon: const Icon(Icons.cloud_upload),
@@ -332,8 +554,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               backgroundColor: AppColors.primaryGreen,
             ),
           ),
+        ],
+
+        // Mark done without proof (fallback for non-proof tasks)
+        if (canAct &&
+            status == 'in_progress' &&
+            _selectedProofImages.isEmpty) ...[
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => _updateStatus('completed'),
+            icon: const Icon(Icons.done_all, size: 18),
+            label: const Text('Mark Done Without Proof'),
+            style: TextButton.styleFrom(foregroundColor: Colors.grey.shade600),
+          ),
+        ],
+
         const SizedBox(height: 12),
-        if (isAssignedToMe)
+        if (canAct)
           OutlinedButton.icon(
             onPressed: _requestHelp,
             icon: const Icon(Icons.group_add),

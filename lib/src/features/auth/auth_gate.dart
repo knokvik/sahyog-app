@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -14,6 +15,12 @@ import '../../core/models.dart';
 import '../../theme/app_colors.dart';
 import '../../core/connectivity_service.dart';
 import '../../core/socket_service.dart';
+import '../../core/live_location_service.dart';
+import '../../core/voice_sos_service.dart';
+import '../../core/mesh_relay_service.dart';
+import '../../core/mesh_foreground_task.dart';
+import '../../core/offline_task_queue.dart';
+import '../../core/battery_adaptive_service.dart';
 import '../assignments/assignments_tab.dart';
 import '../coordinator/coordinator_dashboard_tab.dart';
 import '../coordinator/coordinator_operations_tab.dart';
@@ -25,6 +32,7 @@ import '../missing/missing_tab.dart';
 import '../notifications/notifications_tab.dart';
 import '../profile/profile_tab.dart';
 import 'user_profile_completion_screen.dart';
+import 'location_onboarding_dialog.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key, required this.authState});
@@ -52,6 +60,12 @@ class _AuthGateState extends State<AuthGate> {
   void dispose() {
     ConnectivityService.instance.dispose();
     SocketService.instance.dispose();
+    LiveLocationService.instance.stop();
+    VoiceSosService.instance.dispose();
+    MeshRelayService.instance.stop();
+    OfflineTaskQueue.instance.dispose();
+    BatteryAdaptiveService.instance.dispose();
+    FlutterForegroundTask.stopService();
     super.dispose();
   }
 
@@ -108,11 +122,74 @@ class _AuthGateState extends State<AuthGate> {
       // Initialize background offline SOS sync
       ConnectivityService.instance.initialize(_api);
 
+      // Initialize offline task queue (syncs pending task actions when online)
+      await OfflineTaskQueue.instance.init(_api);
+
+      // Initialize battery-adaptive mode
+      await BatteryAdaptiveService.instance.init();
+
       // Initialize Real-time SOS alerts for coordinators and admins
       SocketService.instance.initialize(
         context,
         user.isCoordinator || user.isAdmin,
       );
+
+      // Start live location tracking (sends every 5s via socket)
+      LiveLocationService.instance.start(
+        userId: user.id,
+        role: user.role,
+        socket: SocketService.instance.socket,
+      );
+
+      // Start mesh relay (Android only). Runs alongside normal retry sync logic.
+      await prefs.setString(
+        'mesh_device_name',
+        user.name.isNotEmpty ? user.name : 'Sahyog',
+      );
+      // Start background mesh relay service (Android foreground service).
+      // This keeps discovery running even when the app is not open.
+      // Only start if battery is not in low/critical mode.
+      if (BatteryAdaptiveService.instance.isMeshEnabled) {
+        await FlutterForegroundTask.startService(
+          serviceId: 701,
+          notificationTitle: 'Sahyog Mesh Relay',
+          notificationText: 'Listening for nearby SOS (tap to open)',
+          callback: meshStartCallback,
+        );
+      }
+
+      // Listen for battery mode changes and auto-stop/restart mesh
+      BatteryAdaptiveService.instance.powerMode.addListener(() {
+        final mode = BatteryAdaptiveService.instance.powerMode.value;
+        if (mode == PowerMode.normal) {
+          // Re-enable mesh when battery recovers
+          FlutterForegroundTask.startService(
+            serviceId: 701,
+            notificationTitle: 'Sahyog Mesh Relay',
+            notificationText: 'Listening for nearby SOS (tap to open)',
+            callback: meshStartCallback,
+          );
+        } else {
+          // Pause mesh to save battery
+          MeshRelayService.instance.stop();
+          FlutterForegroundTask.stopService();
+        }
+      });
+
+      // Initialize voice-activated SOS (opt-in via PICOVOICE_ACCESS_KEY).
+      // If the key or models are not configured, this is a no-op.
+      final voiceKey = AppConfig.voiceAccessKey;
+      if (voiceKey != null) {
+        await VoiceSosService.instance.initialize(
+          reporterId: user.id,
+          api: _api,
+          accessKey: voiceKey,
+          // These should point to your bundled Picovoice models.
+          // Make sure the assets exist and are registered in pubspec.yaml.
+          keywordPath: 'assets/hey_sahyog.ppn',
+          contextPath: 'assets/sos_intent.rhn',
+        );
+      }
 
       // Save to cache
       await prefs.setString('cached_user', jsonEncode(user.toJson()));
@@ -206,17 +283,23 @@ class RoleBasedAppShell extends StatelessWidget {
           onCompleted: onRefresh,
         );
       }
-      return UserAppShell(api: api, user: user);
+      return UserAppShell(api: api, user: user, onRefresh: onRefresh);
     }
     return GeneralAppShell(api: api, user: user);
   }
 }
 
 class UserAppShell extends StatefulWidget {
-  const UserAppShell({super.key, required this.api, required this.user});
+  const UserAppShell({
+    super.key,
+    required this.api,
+    required this.user,
+    required this.onRefresh,
+  });
 
   final ApiClient api;
   final AppUser user;
+  final VoidCallback onRefresh;
 
   @override
   State<UserAppShell> createState() => _UserAppShellState();
@@ -226,6 +309,30 @@ class _UserAppShellState extends State<UserAppShell> {
   int _index = 0;
   LatLng? _mapTarget;
   final ValueNotifier<int> _refreshNotifier = ValueNotifier(0);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.user.organizationId == null) {
+        _showLocationOnboarding();
+      }
+    });
+  }
+
+  void _showLocationOnboarding() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => LocationOnboardingDialog(
+        api: widget.api,
+        onCompleted: () {
+          Navigator.pop(context);
+          widget.onRefresh();
+        },
+      ),
+    );
+  }
 
   static const _titles = ['Dashboard', 'Map', 'Missing', 'Profile'];
 
@@ -249,6 +356,7 @@ class _UserAppShellState extends State<UserAppShell> {
         ),
         api: widget.api,
         initialTarget: _mapTarget,
+        detailedHeatmap: false,
       ),
       MissingTab(
         key: ValueKey('u_missing_${_index}_${_refreshNotifier.value}'),
@@ -376,6 +484,7 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
         ),
         api: widget.api,
         initialTarget: _mapTarget,
+        detailedHeatmap: widget.user.isAdmin || widget.user.isCoordinator,
       ),
       CombinedSosTab(
         key: ValueKey('sos_${_index}_${_refreshNotifier.value}'),
@@ -408,15 +517,20 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              _titles[_index],
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            Flexible(
+              child: Text(
+                _titles[_index],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            const SizedBox(width: 8),
-            const _RoleChip(label: 'VOLUNTEER', color: AppColors.primaryGreen),
           ],
         ),
         actions: [
+          const PendingQueueBadge(),
+          const BatteryIndicator(),
+          const SizedBox(width: 4),
+
           _RefreshControl(
             onRefresh: () {
               setState(() => _refreshNotifier.value++);
@@ -534,6 +648,7 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
         ),
         api: widget.api,
         initialTarget: _mapTarget,
+        detailedHeatmap: true,
       ),
       CoordinatorOperationsTab(
         key: ValueKey('c_ops_${_operationsTabIndex}_${_refreshNotifier.value}'),
@@ -566,15 +681,22 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              _titles[_index],
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            Flexible(
+              child: Text(
+                _titles[_index],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const SizedBox(width: 8),
             const _RoleChip(label: 'COORDINATOR', color: AppColors.infoBlue),
           ],
         ),
         actions: [
+          const PendingQueueBadge(),
+          const BatteryIndicator(),
+          const SizedBox(width: 4),
+
           _RefreshControl(
             onRefresh: () {
               setState(() => _refreshNotifier.value++);
@@ -702,6 +824,89 @@ class _RefreshControlState extends State<_RefreshControl>
     return RotationTransition(
       turns: _ctrl,
       child: IconButton(onPressed: _handle, icon: const Icon(Icons.refresh)),
+    );
+  }
+}
+
+/// Shows battery level with color-coded icon based on power mode.
+class BatteryIndicator extends StatelessWidget {
+  const BatteryIndicator({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<PowerMode>(
+      valueListenable: BatteryAdaptiveService.instance.powerMode,
+      builder: (ctx, mode, _) {
+        return ValueListenableBuilder<int>(
+          valueListenable: BatteryAdaptiveService.instance.batteryLevel,
+          builder: (ctx, level, _) {
+            IconData icon;
+            Color color;
+            switch (mode) {
+              case PowerMode.critical:
+                icon = Icons.battery_alert;
+                color = AppColors.criticalRed;
+                break;
+              case PowerMode.low:
+                icon = Icons.battery_2_bar;
+                color = Colors.orange;
+                break;
+              case PowerMode.normal:
+                if (level > 80) {
+                  icon = Icons.battery_full;
+                } else if (level > 50) {
+                  icon = Icons.battery_5_bar;
+                } else {
+                  icon = Icons.battery_3_bar;
+                }
+                color = AppColors.primaryGreen;
+                break;
+            }
+            return Tooltip(
+              message: '$level% — ${mode.name} mode',
+              child: Icon(icon, color: color, size: 20),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Shows a badge with the number of pending offline task actions.
+class PendingQueueBadge extends StatelessWidget {
+  const PendingQueueBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: OfflineTaskQueue.instance.pendingCount,
+      builder: (ctx, count, _) {
+        if (count == 0) return const SizedBox.shrink();
+        return Container(
+          margin: const EdgeInsets.only(right: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.orange,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off, size: 12, color: Colors.white),
+              const SizedBox(width: 3),
+              Text(
+                '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

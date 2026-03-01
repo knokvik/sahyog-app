@@ -28,7 +28,6 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
   late TabController _tabController;
   List<Map<String, dynamic>> _volunteers = [];
   List<Map<String, dynamic>> _tasks = [];
-  List<Map<String, dynamic>> _needs = [];
   List<Map<String, dynamic>> _history = [];
   bool _loading = true;
   String _error = '';
@@ -44,7 +43,6 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
   bool _creating = false;
 
   // Filters
-  String _needsFilter = 'all';
   String _volunteersFilter = 'all'; // all, assigned, unassigned
 
   // View state
@@ -56,7 +54,7 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 4,
+      length: 3,
       vsync: this,
       initialIndex: widget.initialTabIndex,
     );
@@ -96,15 +94,13 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
       final results = await Future.wait([
         widget.api.get('/api/v1/coordinator/volunteers'),
         widget.api.get('/api/v1/coordinator/tasks'),
-        widget.api.get('/api/v1/coordinator/needs'),
         widget.api.get('/api/v1/tasks/history'),
       ]);
       if (!mounted) return;
       setState(() {
         _volunteers = _toList(results[0]);
         _tasks = _toList(results[1]);
-        _needs = _toList(results[2]);
-        _history = _toList(results[3]);
+        _history = _toList(results[2]);
         _loading = false;
       });
     } catch (e) {
@@ -317,16 +313,178 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
     }
   }
 
-  Future<void> _updateTaskStatus(String taskId, String status) async {
+  Future<void> _updateTaskStatus(
+    String taskId,
+    String status, {
+    List<String>? proofImages,
+  }) async {
     try {
-      await widget.api.patch(
-        '/api/v1/tasks/$taskId/status',
-        body: {'status': status},
-      );
+      final body = <String, dynamic>{'status': status};
+      if (proofImages != null && proofImages.isNotEmpty) {
+        body['proof_images'] = proofImages;
+      }
+      await widget.api.patch('/api/v1/tasks/$taskId/status', body: body);
       _snack('Task → $status');
       await _load();
     } catch (e) {
       _snack('Update failed: $e');
+    }
+  }
+
+  /// Shows a proof image picker dialog before completing a task.
+  Future<void> _completeTaskWithProof(String taskId) async {
+    final List<XFile> proofFiles = [];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.camera_alt_outlined,
+                    size: 48,
+                    color: AppColors.primaryGreen,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Upload Proof',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add at least one photo as evidence of task completion.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey[600], height: 1.5),
+                  ),
+                  const SizedBox(height: 16),
+                  if (proofFiles.isNotEmpty)
+                    SizedBox(
+                      height: 80,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: proofFiles.length,
+                        itemBuilder: (_, i) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  File(proofFiles[i].path),
+                                  width: 80,
+                                  height: 80,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: GestureDetector(
+                                  onTap: () => setDialogState(
+                                    () => proofFiles.removeAt(i),
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final files = await ImagePicker().pickMultiImage(
+                        imageQuality: 70,
+                      );
+                      if (files.isNotEmpty) {
+                        setDialogState(() => proofFiles.addAll(files));
+                      }
+                    },
+                    icon: const Icon(Icons.add_a_photo_outlined),
+                    label: Text(
+                      proofFiles.isEmpty ? 'Select Photos' : 'Add More',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: proofFiles.isEmpty
+                              ? null
+                              : () => Navigator.pop(ctx, true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primaryGreen,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Complete Task'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (confirmed != true || proofFiles.isEmpty) return;
+    // Upload images to Supabase via backend
+    try {
+      final result = await widget.api.uploadFiles(
+        '/api/v1/uploads/task-proof',
+        fieldName: 'images',
+        filePaths: proofFiles.map((f) => f.path).toList(),
+        query: {'task_id': taskId},
+      );
+      final urls = (result is Map && result['urls'] is List)
+          ? (result['urls'] as List).cast<String>()
+          : <String>[];
+      if (urls.isEmpty) {
+        _snack('Upload failed — no URLs returned');
+        return;
+      }
+      await _updateTaskStatus(taskId, 'completed', proofImages: urls);
+    } catch (e) {
+      _snack('Image upload failed: $e');
     }
   }
 
@@ -427,7 +585,6 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
           tabs: const [
             Tab(text: 'Volunteers'),
             Tab(text: 'Tasks'),
-            Tab(text: 'Needs'),
             Tab(text: 'History'),
           ],
         ),
@@ -446,7 +603,6 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
             children: [
               _buildVolunteersTab(),
               _buildTasksTab(),
-              _buildNeedsTab(),
               _buildHistoryTab(),
             ],
           ),
@@ -1041,7 +1197,64 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
                   color: Colors.blueGrey,
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+              // Proof Images
+              if (task['proof_images'] != null &&
+                  (task['proof_images'] as List).isNotEmpty) ...[
+                const Text(
+                  'Completion Proof',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 100,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: (task['proof_images'] as List).length,
+                    itemBuilder: (_, i) {
+                      final img = (task['proof_images'] as List)[i].toString();
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: img.startsWith('http')
+                              ? Image.network(
+                                  img,
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(
+                                  width: 100,
+                                  height: 100,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryGreen.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.image,
+                                        color: AppColors.primaryGreen,
+                                      ),
+                                      Text(
+                                        'Proof',
+                                        style: TextStyle(fontSize: 10),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+              const SizedBox(height: 8),
               const Text(
                 'Operational Actions',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -1057,7 +1270,7 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
                     color: AppColors.primaryGreen,
                     onPressed: () {
                       Navigator.pop(ctx);
-                      _updateTaskStatus(task['id'].toString(), 'completed');
+                      _completeTaskWithProof(task['id'].toString());
                     },
                   ),
                   _ActionButton(
@@ -1089,84 +1302,6 @@ class _CoordinatorOperationsTabState extends State<CoordinatorOperationsTab>
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  // ── Needs (read-only) ──────────────────────────────────────────────
-  Widget _buildNeedsTab() {
-    final filtered = _needsFilter == 'all'
-        ? _needs
-        : _needs
-              .where((n) => (n['status'] ?? '').toString() == _needsFilter)
-              .toList();
-
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          Wrap(
-            spacing: 8,
-            children: ['all', 'unassigned', 'assigned', 'resolved'].map((s) {
-              return ChoiceChip(
-                label: Text(s.toUpperCase()),
-                selected: _needsFilter == s,
-                onSelected: (_) => setState(() => _needsFilter = s),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          if (filtered.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(14),
-                child: Text('No needs for this filter.'),
-              ),
-            )
-          else
-            ...filtered.map((need) {
-              final status = (need['status'] ?? 'unassigned').toString();
-              final volName = (need['volunteer_name'] ?? 'Unassigned')
-                  .toString();
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        (need['type'] ?? 'Need').toString(),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Reporter: ${need['reporter_name'] ?? 'Unknown'}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      Text(
-                        'Urgency: ${need['urgency'] ?? 'medium'}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      Text(
-                        'Volunteer: $volName',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      const SizedBox(height: 4),
-                      Chip(
-                        label: Text(
-                          status.toUpperCase(),
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-        ],
       ),
     );
   }

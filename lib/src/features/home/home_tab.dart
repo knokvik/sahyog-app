@@ -11,6 +11,8 @@ import '../../core/models.dart';
 import '../../core/socket_service.dart';
 import '../../core/database_helper.dart';
 import '../../theme/app_colors.dart';
+import '../search/app_search_delegate.dart';
+import '../search/app_inline_search.dart';
 import 'sos_alerts_panel.dart';
 import 'emergency_sos_box.dart';
 
@@ -30,7 +32,8 @@ class HomeTab extends StatefulWidget {
   State<HomeTab> createState() => _HomeTabState();
 }
 
-class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
+class _HomeTabState extends State<HomeTab>
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   final _locationService = LocationService();
   final MapController _miniMapController = MapController();
   double _currentZoom = 12.0;
@@ -43,6 +46,14 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
   List<Map<String, dynamic>> _recentSos = [];
   Timer? _pollTimer;
 
+  late final AnimationController _glowCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat();
+
+  final FocusNode _searchFocus = FocusNode();
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -50,11 +61,16 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
     _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted) _load(silent: true);
     });
+    _searchFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _glowCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -158,147 +174,429 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
       children: [
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         Expanded(
-          child: RefreshIndicator(
-            onRefresh: _load,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const SizedBox(height: 8),
-                _RoleChip(role: widget.user.role),
-                const SizedBox(height: 16),
-                if (_error.isNotEmpty)
-                  Text(
-                    _error,
-                    style: const TextStyle(color: AppColors.criticalRed),
-                  ),
-                GestureDetector(
-                  onTap: () {
-                    widget.onNavigate?.call(1);
-                  },
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: SizedBox(height: 200, child: _buildMiniMap()),
-                  ),
-                ),
-                _buildStatsRow(),
-                const SizedBox(height: 12),
-                EmergencySosBox(
-                  user: widget.user,
-                  api: widget.api,
-                  onSosTap: () {
-                    final alerts = SocketService.instance.liveSosAlerts.value;
-                    if (alerts.isNotEmpty) {
-                      DatabaseHelper.instance
-                          .getActiveIncident(widget.user.id)
-                          .then((active) {
-                            if (context.mounted) {
-                              SosAlertsPanel.show(
-                                context: context,
-                                alerts: alerts,
-                                activeLocalUuid: active?.uuid,
-                                onCancelSos: null,
-                                onGoToSosPanels: () =>
-                                    widget.onNavigate?.call(3),
-                              );
+          child: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 16),
+                  AnimatedCrossFade(
+                    duration: const Duration(milliseconds: 300),
+                    crossFadeState: _searchFocus.hasFocus
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    firstChild: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_error.isNotEmpty)
+                          Text(
+                            _error,
+                            style: const TextStyle(
+                              color: AppColors.criticalRed,
+                            ),
+                          ),
+                        GestureDetector(
+                          onTap: () {
+                            widget.onNavigate?.call(1);
+                          },
+                          child: Card(
+                            clipBehavior: Clip.antiAlias,
+                            child: SizedBox(
+                              height: 200,
+                              child: _buildMiniMap(),
+                            ),
+                          ),
+                        ),
+                        _buildStatsRow(),
+                        const SizedBox(height: 12),
+                        EmergencySosBox(
+                          user: widget.user,
+                          api: widget.api,
+                          onSosTap: () {
+                            final alerts =
+                                SocketService.instance.liveSosAlerts.value;
+                            if (alerts.isNotEmpty) {
+                              DatabaseHelper.instance
+                                  .getActiveIncident(widget.user.id)
+                                  .then((active) {
+                                    if (context.mounted) {
+                                      SosAlertsPanel.show(
+                                        context: context,
+                                        alerts: alerts,
+                                        activeLocalUuid: active?.uuid,
+                                        onCancelSos: null,
+                                        onGoToSosPanels: () =>
+                                            widget.onNavigate?.call(3),
+                                      );
+                                    }
+                                  });
                             }
-                          });
-                    }
-                  },
-                  onSosLocationTap: (ll) =>
-                      widget.onNavigate?.call(1, target: ll),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Recent Tasks',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                if (_recentTasks.isEmpty)
-                  const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No recent tasks found.'),
+                          },
+                          onSosLocationTap: (ll) =>
+                              widget.onNavigate?.call(1, target: ll),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Recent Tasks',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_recentTasks.isEmpty)
+                          const Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('No recent tasks found.'),
+                            ),
+                          )
+                        else
+                          ..._recentTasks.map((task) {
+                            final title =
+                                (task['title'] ?? task['type'] ?? 'Task')
+                                    .toString();
+                            final status = (task['status'] ?? 'pending')
+                                .toString();
+                            final desc = (task['description'] ?? '').toString();
+                            return Card(
+                              elevation: 0,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: BorderSide(
+                                  color: Colors.grey.withOpacity(0.2),
+                                  width: 1,
+                                ),
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () => widget.onNavigate?.call(2),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primaryGreen
+                                              .withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.assignment_turned_in,
+                                          color: AppColors.primaryGreen,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              desc.isEmpty
+                                                  ? 'No description provided.'
+                                                  : desc,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                                fontSize: 13,
+                                                height: 1.4,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          status.toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.grey.shade700,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Recent SOS',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_recentSos.isEmpty)
+                          const Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('No recent SOS found.'),
+                            ),
+                          )
+                        else
+                          ..._recentSos.map((sos) {
+                            final status = (sos['status'] ?? 'active')
+                                .toString();
+                            final name =
+                                (sos['reporter_name'] ??
+                                        sos['volunteer_name'] ??
+                                        'Unknown')
+                                    .toString();
+                            return Card(
+                              elevation: 0,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: BorderSide(
+                                  color: AppColors.criticalRed.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () {
+                                  widget.onNavigate?.call(3);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.criticalRed
+                                              .withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.sos,
+                                          color: AppColors.criticalRed,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Emergency Alert',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: AppColors.criticalRed,
+                                                fontWeight: FontWeight.w600,
+                                                letterSpacing: 0.5,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              name,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.criticalRed,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          status.toUpperCase(),
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        const SizedBox(height: 32),
+                      ],
                     ),
-                  )
-                else
-                  ..._recentTasks.map((task) {
-                    final title = (task['title'] ?? task['type'] ?? 'Task')
-                        .toString();
-                    final status = (task['status'] ?? 'pending').toString();
-                    final desc = (task['description'] ?? '').toString();
-                    return Card(
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: AppColors.primaryGreen,
-                          foregroundColor: Colors.white,
-                          child: Icon(Icons.assignment_turned_in),
-                        ),
-                        title: Text(title),
-                        subtitle: Text(
-                          desc.isEmpty ? 'No description' : desc,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: Chip(
-                          label: Text(
-                            status.toUpperCase(),
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                const SizedBox(height: 16),
-                Text(
-                  'Recent SOS',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                if (_recentSos.isEmpty)
-                  const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No recent SOS found.'),
-                    ),
-                  )
-                else
-                  ..._recentSos.map((sos) {
-                    final status = (sos['status'] ?? 'active').toString();
-                    return Card(
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: AppColors.criticalRed,
-                          foregroundColor: Colors.white,
-                          child: Icon(Icons.sos),
-                        ),
-                        title: Text(
-                          (sos['reporter_name'] ??
-                                  sos['volunteer_name'] ??
-                                  'Unknown')
-                              .toString(),
-                        ),
-                        trailing: Chip(
-                          label: Text(
-                            status.toUpperCase(),
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                        onTap: () {
-                          DefaultTabController.of(context).animateTo(1);
+                    secondChild: SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.7,
+                      child: InlineSearchResults(
+                        api: widget.api,
+                        query: _searchQuery,
+                        onResultTap: (result) {
+                          _searchFocus.unfocus();
+                          switch (result.category) {
+                            case SearchCategory.volunteer:
+                            case SearchCategory.task:
+                              widget.onNavigate?.call(2); // Tasks
+                              break;
+                            case SearchCategory.sos:
+                              widget.onNavigate?.call(3); // SOS Operations
+                              break;
+                            case SearchCategory.zone:
+                              final lat = double.tryParse(
+                                (result.raw['center_lat'] ?? '').toString(),
+                              );
+                              final lng = double.tryParse(
+                                (result.raw['center_lng'] ?? '').toString(),
+                              );
+                              if (lat != null && lng != null) {
+                                widget.onNavigate?.call(
+                                  1,
+                                  target: LatLng(lat, lng),
+                                );
+                              } else {
+                                widget.onNavigate?.call(1);
+                              }
+                              break;
+                          }
                         },
                       ),
-                    );
-                  }),
-                const SizedBox(height: 32),
-              ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildHeader() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(30),
+        side: BorderSide(
+          color: _searchFocus.hasFocus
+              ? AppColors.primaryGreen.withOpacity(0.5)
+              : Colors.grey.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Row(
+          children: [
+            AnimatedBuilder(
+              animation: _glowCtrl,
+              builder: (context, child) {
+                return Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: SweepGradient(
+                      colors: [
+                        Colors.transparent,
+                        _searchFocus.hasFocus
+                            ? AppColors.primaryGreen
+                            : Colors.grey.shade400,
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                      transform: GradientRotation(
+                        _glowCtrl.value * 2 * 3.14159,
+                      ),
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(2.5),
+                  child: CircleAvatar(
+                    backgroundColor: Colors.white,
+                    radius: 19,
+                    child: CircleAvatar(
+                      backgroundColor: AppColors.primaryGreen,
+                      foregroundColor: Colors.white,
+                      radius: 17,
+                      child: Text(
+                        widget.user.name.isNotEmpty
+                            ? widget.user.name[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                focusNode: _searchFocus,
+                onChanged: (val) => setState(() => _searchQuery = val),
+                decoration: const InputDecoration(
+                  hintText: 'Search tasks, SOS...',
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                ),
+              ),
+            ),
+            if (_searchFocus.hasFocus)
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.clear, color: Colors.grey),
+                onPressed: () {
+                  setState(() {
+                    _searchQuery = '';
+                  });
+                  if (_searchQuery.isEmpty) {
+                    _searchFocus.unfocus();
+                  }
+                },
+              )
+            else
+              const Icon(Icons.search, color: Colors.grey),
+          ],
+        ),
+      ),
     );
   }
 
@@ -580,35 +878,6 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
             ),
           );
         }).toList(),
-      ),
-    );
-  }
-}
-
-class _RoleChip extends StatelessWidget {
-  const _RoleChip({required this.role});
-
-  final String role;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.primaryGreen.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          role.toUpperCase(),
-          style: const TextStyle(
-            color: AppColors.primaryGreen,
-            fontWeight: FontWeight.w800,
-            fontSize: 12,
-            letterSpacing: 1.1,
-          ),
-        ),
       ),
     );
   }

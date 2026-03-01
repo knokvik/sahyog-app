@@ -4,17 +4,27 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/location_service.dart';
+import '../../core/live_location_service.dart';
 import '../../core/models.dart';
+import '../../core/socket_service.dart';
 import '../../theme/app_colors.dart';
 
 class MapTab extends StatefulWidget {
-  const MapTab({super.key, required this.api, this.initialTarget});
+  const MapTab({
+    super.key,
+    required this.api,
+    this.initialTarget,
+    this.detailedHeatmap = false,
+  });
 
   final ApiClient api;
   final LatLng? initialTarget;
+  final bool detailedHeatmap;
 
   @override
   State<MapTab> createState() => _MapTabState();
@@ -29,6 +39,8 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   List<_ZoneCircle> _zones = [];
   final List<_ZoneCircle> _userMarkedZones = [];
   List<_ResourceMarker> _resources = [];
+  List<_HeatmapPoint> _heatmapPoints = [];
+  List<_ShelterPin> _shelterPins = [];
   bool _loading = true;
   String _error = '';
   Timer? _pollTimer;
@@ -36,9 +48,16 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
 
   bool _isMapReady = false;
 
+  bool get _isPublicHeatmapMode => !widget.detailedHeatmap;
+
   @override
   void initState() {
     super.initState();
+    _syncHeatmapFromSocket();
+    SocketService.instance.liveHeatmapPoints.addListener(
+      _onHeatmapSocketUpdate,
+    );
+    SocketService.instance.liveShelterPins.addListener(_onHeatmapSocketUpdate);
     _load();
     _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) _load(silent: true);
@@ -67,7 +86,63 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    SocketService.instance.liveHeatmapPoints.removeListener(
+      _onHeatmapSocketUpdate,
+    );
+    SocketService.instance.liveShelterPins.removeListener(
+      _onHeatmapSocketUpdate,
+    );
     super.dispose();
+  }
+
+  void _onHeatmapSocketUpdate() {
+    if (!mounted) return;
+    _syncHeatmapFromSocket();
+  }
+
+  void _syncHeatmapFromSocket() {
+    final incomingPoints = SocketService.instance.liveHeatmapPoints.value;
+    final incomingShelters = SocketService.instance.liveShelterPins.value;
+
+    final parsedPoints = incomingPoints
+        .map((item) {
+          final lat = parseLat(item['lat']);
+          final lng = parseLng(item['lng']);
+          if (lat == null || lng == null) return null;
+
+          final count = parseLat(item['count']) ?? 1;
+          final severity = parseLat(item['severity']) ?? 1;
+
+          return _HeatmapPoint(
+            point: LatLng(lat, lng),
+            count: count,
+            severity: severity.clamp(1, 10),
+          );
+        })
+        .whereType<_HeatmapPoint>()
+        .toList(growable: false);
+
+    final parsedShelters = incomingShelters
+        .map((item) {
+          final lat = parseLat(item['lat']);
+          final lng = parseLng(item['lng']);
+          if (lat == null || lng == null) return null;
+
+          return _ShelterPin(
+            id: (item['id'] ?? '${lat}_$lng').toString(),
+            name: (item['name'] ?? 'Shelter').toString(),
+            point: LatLng(lat, lng),
+            capacity: item['capacity'],
+            occupancy: item['occupancy'],
+          );
+        })
+        .whereType<_ShelterPin>()
+        .toList(growable: false);
+
+    setState(() {
+      _heatmapPoints = parsedPoints;
+      _shelterPins = parsedShelters;
+    });
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -216,12 +291,127 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
     return null;
   }
 
+  Future<void> _showSosNavigationChooser(LatLng destination) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Navigate to SOS Location',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0x1A27B469),
+                    child: Icon(Icons.map, color: AppColors.primaryGreen),
+                  ),
+                  title: const Text('Sahyog Map'),
+                  subtitle: const Text('Focus this SOS on in-app map'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _mapController.move(destination, 16);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0x1A34A853),
+                    child: Icon(Icons.map, color: Color(0xFF34A853)),
+                  ),
+                  title: const Text('Google Maps'),
+                  subtitle: const Text('Turn-by-turn directions'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _launchExternalNavigation(
+                      providerName: 'Google Maps',
+                      appUri: Uri.parse(
+                        'comgooglemaps://?daddr=${destination.latitude},${destination.longitude}&directionsmode=driving',
+                      ),
+                      fallbackUri: Uri.parse(
+                        'https://www.google.com/maps/dir/?api=1&destination=${destination.latitude},${destination.longitude}',
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0x1A007AFF),
+                    child: Icon(Icons.navigation, color: Color(0xFF007AFF)),
+                  ),
+                  title: const Text('Apple Maps'),
+                  subtitle: const Text('Open with Apple Maps'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _launchExternalNavigation(
+                      providerName: 'Apple Maps',
+                      appUri: Uri.parse(
+                        'maps://?daddr=${destination.latitude},${destination.longitude}&dirflg=d',
+                      ),
+                      fallbackUri: Uri.parse(
+                        'http://maps.apple.com/?daddr=${destination.latitude},${destination.longitude}&dirflg=d',
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _launchExternalNavigation({
+    required String providerName,
+    required Uri appUri,
+    required Uri fallbackUri,
+  }) async {
+    try {
+      final openedApp = await launchUrl(
+        appUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (openedApp) return;
+
+      final openedFallback = await launchUrl(
+        fallbackUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!openedFallback && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open $providerName.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Navigation launch failed: $e')));
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final visibleResources = widget.detailedHeatmap
+        ? _resources
+        : _resources.where((r) => r.type != 'SOS').toList(growable: false);
+    final activeSos = _resources
+        .where((r) => r.type == 'SOS')
+        .toList(growable: false);
 
     return Scaffold(
       body: SafeArea(
@@ -356,15 +546,135 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                             );
                           }).toList(),
                         ),
+                        if (_heatmapPoints.isNotEmpty)
+                          CircleLayer(
+                            circles: _heatmapPoints.map((point) {
+                              final radius = _isPublicHeatmapMode
+                                  ? 220 + (point.count * 24)
+                                  : 110 + (point.count * 16);
+                              return CircleMarker(
+                                point: point.point,
+                                radius: radius,
+                                useRadiusInMeter: true,
+                                color: _heatmapColor(
+                                  point.severity,
+                                  blurred: _isPublicHeatmapMode,
+                                ),
+                                borderColor: Colors.transparent,
+                                borderStrokeWidth: 0,
+                              );
+                            }).toList(),
+                          ),
+                        if (_isPublicHeatmapMode && _heatmapPoints.isNotEmpty)
+                          CircleLayer(
+                            circles: _heatmapPoints.map((point) {
+                              final radius = 90 + (point.count * 12);
+                              return CircleMarker(
+                                point: point.point,
+                                radius: radius,
+                                useRadiusInMeter: true,
+                                color: _heatmapColor(point.severity),
+                                borderColor: Colors.transparent,
+                                borderStrokeWidth: 0,
+                              );
+                            }).toList(),
+                          ),
+                        if (_shelterPins.isNotEmpty)
+                          MarkerLayer(
+                            markers: _shelterPins.map((pin) {
+                              return Marker(
+                                point: pin.point,
+                                width: 130,
+                                height: 70,
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(10),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            blurRadius: 6,
+                                            color: Color(0x22000000),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Text(
+                                        pin.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.health_and_safety,
+                                      color: Colors.blue,
+                                      size: 24,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        // ─── Live user location markers ──────────────────
+                        ValueListenableBuilder<Map<String, LiveUserLocation>>(
+                          valueListenable:
+                              LiveLocationService.instance.liveLocations,
+                          builder: (context, liveMap, _) {
+                            if (liveMap.isEmpty) return const SizedBox.shrink();
+                            return MarkerLayer(
+                              markers: liveMap.values.map((loc) {
+                                final roleColor = switch (loc.role) {
+                                  'volunteer' => Colors.blue,
+                                  'coordinator' => const Color(0xFF10B981),
+                                  'citizen' => Colors.orange,
+                                  _ => Colors.grey,
+                                };
+                                return Marker(
+                                  point: LatLng(loc.lat, loc.lng),
+                                  width: 32,
+                                  height: 32,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: roleColor.withValues(alpha: 0.25),
+                                      border: Border.all(
+                                        color: roleColor,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.person,
+                                      size: 16,
+                                      color: roleColor,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
+                        ),
                         MarkerLayer(
-                          markers: _resources.map((r) {
+                          markers: visibleResources.map((r) {
                             final isSos = r.type == 'SOS';
                             return Marker(
                               point: r.point,
                               width: 120,
                               height: 60,
                               child: isSos
-                                  ? _SosMarker()
+                                  ? GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () =>
+                                          _showSosNavigationChooser(r.point),
+                                      child: _SosMarker(),
+                                    )
                                   : Column(
                                       children: [
                                         Container(
@@ -434,6 +744,19 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                         ),
                       ),
                     ),
+                  // LEFT-SIDE: Active SOS FAB
+                  if (widget.detailedHeatmap)
+                    Positioned(
+                      left: 16,
+                      bottom: 90,
+                      child: _SosFab(
+                        alerts: activeSos,
+                        onGoToLocation: (LatLng point) {
+                          _mapController.move(point, 16);
+                        },
+                      ),
+                    ),
+                  // RIGHT-SIDE: My Location, Zoom controls
                   Positioned(
                     right: 16,
                     bottom: 90,
@@ -488,6 +811,12 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           },
                           backgroundColor: Colors.white,
                           foregroundColor: AppColors.primaryGreen,
+                          shape: CircleBorder(
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                              width: 0.8,
+                            ),
+                          ),
                           child: const Icon(Icons.gps_fixed),
                         ),
                         const SizedBox(height: 8),
@@ -503,6 +832,12 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           },
                           backgroundColor: Colors.white,
                           foregroundColor: AppColors.primaryGreen,
+                          shape: CircleBorder(
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                              width: 0.8,
+                            ),
+                          ),
                           child: const Icon(Icons.add),
                         ),
                         const SizedBox(height: 8),
@@ -518,6 +853,12 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           },
                           backgroundColor: Colors.white,
                           foregroundColor: AppColors.primaryGreen,
+                          shape: CircleBorder(
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                              width: 0.8,
+                            ),
+                          ),
                           child: const Icon(Icons.remove),
                         ),
                       ],
@@ -629,13 +970,19 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                               Row(
                                 children: [
                                   _CompactDot(
-                                    color: AppColors.criticalRed,
-                                    label: 'SOS',
+                                    color: widget.detailedHeatmap
+                                        ? AppColors.criticalRed
+                                        : Colors.blue,
+                                    label: widget.detailedHeatmap
+                                        ? 'SOS'
+                                        : 'Shelter',
                                   ),
                                   const SizedBox(width: 12),
                                   _CompactDot(
                                     color: AppColors.primaryGreen,
-                                    label: 'User',
+                                    label: widget.detailedHeatmap
+                                        ? 'Resource'
+                                        : 'Heatmap',
                                   ),
                                 ],
                               ),
@@ -644,7 +991,7 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                                 child: Divider(height: 1),
                               ),
                               Text(
-                                'Items & SOS: ${_resources.length}',
+                                'Items & SOS: ${visibleResources.length + activeSos.length}',
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
@@ -680,6 +1027,16 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
       default:
         return AppColors.criticalRed;
     }
+  }
+
+  Color _heatmapColor(double severity, {bool blurred = false}) {
+    final normalized = severity.clamp(1, 10);
+    final Color base = normalized >= 8
+        ? AppColors.criticalRed
+        : normalized >= 5
+        ? AppColors.warningAmber
+        : AppColors.primaryGreen;
+    return base.withValues(alpha: blurred ? 0.13 : 0.2);
   }
 
   Widget _darkTileBuilder(
@@ -765,6 +1122,34 @@ class _ResourceMarker {
   final String type;
   final String status;
   final LatLng point;
+}
+
+class _HeatmapPoint {
+  _HeatmapPoint({
+    required this.point,
+    required this.count,
+    required this.severity,
+  });
+
+  final LatLng point;
+  final double count;
+  final double severity;
+}
+
+class _ShelterPin {
+  _ShelterPin({
+    required this.id,
+    required this.name,
+    required this.point,
+    this.capacity,
+    this.occupancy,
+  });
+
+  final String id;
+  final String name;
+  final LatLng point;
+  final dynamic capacity;
+  final dynamic occupancy;
 }
 
 class _SosMarker extends StatefulWidget {
@@ -853,6 +1238,177 @@ class _SosMarkerState extends State<_SosMarker>
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// Left-side FAB that shows a badge with the number of active SOS alerts
+/// and opens a bottom sheet listing them with "Go to Location" actions.
+class _SosFab extends StatelessWidget {
+  const _SosFab({required this.alerts, required this.onGoToLocation});
+
+  final List<_ResourceMarker> alerts;
+  final ValueChanged<LatLng> onGoToLocation;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = alerts.length;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        FloatingActionButton(
+          heroTag: 'map_sos_fab',
+          mini: true,
+          onPressed: () => _showSosSheet(context),
+          backgroundColor: count > 0 ? AppColors.criticalRed : Colors.white,
+          foregroundColor: count > 0 ? Colors.white : AppColors.criticalRed,
+          shape: CircleBorder(
+            side: BorderSide(
+              color: count > 0
+                  ? AppColors.criticalRed.withValues(alpha: 0.3)
+                  : Colors.grey.shade300,
+              width: 0.8,
+            ),
+          ),
+          child: const Icon(Icons.sos, size: 22),
+        ),
+        if (count > 0)
+          Positioned(
+            right: -4,
+            top: -4,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: AppColors.criticalRed,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showSosSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.4,
+          minChildSize: 0.25,
+          maxChildSize: 0.7,
+          builder: (ctx, scrollCtrl) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.sos, color: AppColors.criticalRed),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Active SOS (${alerts.length})',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: alerts.isEmpty
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                'No active SOS alerts on the map.',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            controller: scrollCtrl,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            itemCount: alerts.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (ctx, i) {
+                              final sos = alerts[i];
+                              return ListTile(
+                                leading: const CircleAvatar(
+                                  backgroundColor: AppColors.criticalRed,
+                                  child: Icon(
+                                    Icons.sos,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                                title: Text(
+                                  'SOS #${sos.id.length > 8 ? sos.id.substring(0, 8) : sos.id}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${sos.point.latitude.toStringAsFixed(4)}, ${sos.point.longitude.toStringAsFixed(4)}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                trailing: FilledButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    onGoToLocation(sos.point);
+                                  },
+                                  icon: const Icon(Icons.location_on, size: 16),
+                                  label: const Text(
+                                    'Go',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.criticalRed,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    minimumSize: const Size(0, 32),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );

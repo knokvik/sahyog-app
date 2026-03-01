@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'dart:convert';
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api_client.dart';
 import '../../core/location_service.dart';
@@ -27,6 +29,22 @@ class _ProfileTabState extends State<ProfileTab> {
   Future<void> _updateUserDetails() async {
     try {
       setState(() => _busy = true);
+
+      // Save family contact to SharedPreferences for offline mesh use
+      final prefs = await SharedPreferences.getInstance();
+      if (_familyCtrl.text.isNotEmpty) {
+        final fcData = [
+          {
+            "name": "Emergency Contact",
+            "phone": _familyCtrl.text,
+            "relation": "Family",
+          },
+        ];
+        await prefs.setString('family_contacts', jsonEncode(fcData));
+      } else {
+        await prefs.remove('family_contacts');
+      }
+
       await widget.api.put(
         '/api/users/me',
         body: {
@@ -115,6 +133,7 @@ class _ProfileTabState extends State<ProfileTab> {
   late TextEditingController _bloodCtrl;
   late TextEditingController _medCtrl;
   late TextEditingController _addrCtrl;
+  late TextEditingController _familyCtrl;
 
   @override
   void initState() {
@@ -123,6 +142,21 @@ class _ProfileTabState extends State<ProfileTab> {
     _bloodCtrl = TextEditingController(text: widget.user.bloodGroup);
     _medCtrl = TextEditingController(text: widget.user.medicalHistory);
     _addrCtrl = TextEditingController(text: widget.user.address);
+    _familyCtrl = TextEditingController();
+
+    // Load existing family contact
+    SharedPreferences.getInstance().then((prefs) {
+      final fcJson = prefs.getString('family_contacts');
+      if (fcJson != null && fcJson.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(fcJson);
+          if (decoded is List && decoded.isNotEmpty) {
+            final first = decoded.first as Map<String, dynamic>;
+            _familyCtrl.text = first['phone']?.toString() ?? '';
+          }
+        } catch (_) {}
+      }
+    });
     _locationTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (_trackingEnabled && mounted) {
         _syncLocationOnce(silent: true);
@@ -135,6 +169,7 @@ class _ProfileTabState extends State<ProfileTab> {
     _bloodCtrl.dispose();
     _medCtrl.dispose();
     _addrCtrl.dispose();
+    _familyCtrl.dispose();
     _locationTimer?.cancel();
     super.dispose();
   }
@@ -191,26 +226,6 @@ class _ProfileTabState extends State<ProfileTab> {
                     Text(
                       email.isEmpty ? 'No email linked' : email,
                       style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    Chip(
-                      backgroundColor:
-                          (widget.user.isUser
-                                  ? Colors.orange
-                                  : AppColors.primaryGreen)
-                              .withValues(alpha: 0.1),
-                      side: BorderSide.none,
-                      label: Text(
-                        (widget.user.isUser ? 'CITIZEN' : widget.user.role)
-                            .toUpperCase(),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          color: widget.user.isUser
-                              ? Colors.deepOrange
-                              : AppColors.primaryGreen,
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -277,6 +292,13 @@ class _ProfileTabState extends State<ProfileTab> {
                           hint: 'Allergies, chronic conditions...',
                           maxLines: 3,
                         ),
+                        const SizedBox(height: 12),
+                        _buildProfileField(
+                          label: 'Emergency Contact Phone',
+                          controller: _familyCtrl,
+                          icon: Icons.contact_emergency,
+                          hint: 'Used for Offline Mesh Relays',
+                        ),
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -298,7 +320,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
         const SizedBox(height: 16),
 
-        if (isVolunteer)
+        if (isVolunteer || widget.user.isCoordinator)
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -315,7 +337,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           setState(() => _availability = value);
                           _toggleAvailability(value);
                         },
-                  title: const Text('Volunteer Availability'),
+                  title: const Text('Responder Availability'),
                   subtitle: const Text(
                     'Reflects directly to server live status.',
                   ),
@@ -358,7 +380,7 @@ class _ProfileTabState extends State<ProfileTab> {
             child: const Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'Availability and location toggle are enabled only for volunteer login.',
+                'Availability and location toggle are enabled only for Volunteer and Coordinator logins.',
               ),
             ),
           ),

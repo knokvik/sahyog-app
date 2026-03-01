@@ -10,6 +10,9 @@ class SocketService {
 
   IO.Socket? _socket;
 
+  /// Expose the socket instance for other services (e.g. LiveLocationService)
+  IO.Socket? get socket => _socket;
+
   // Let the UI know there's a new SOS so it can trigger a board refresh
   final ValueNotifier<Map<String, dynamic>?> onNewSosAlert = ValueNotifier(
     null,
@@ -17,6 +20,10 @@ class SocketService {
   final ValueNotifier<Map<String, dynamic>?> onSosResolved = ValueNotifier(
     null,
   );
+  final ValueNotifier<List<Map<String, dynamic>>> liveHeatmapPoints =
+      ValueNotifier([]);
+  final ValueNotifier<List<Map<String, dynamic>>> liveShelterPins =
+      ValueNotifier([]);
 
   /// Tracks all currently active SOS alerts received via socket
   final ValueNotifier<Map<String, Map<String, dynamic>>> liveSosAlerts =
@@ -98,6 +105,59 @@ class SocketService {
       }
     });
 
+    _socket!.on('heatmap:update', (data) {
+      if (data is! Map) return;
+
+      final rawPoints = data['points'];
+      final rawShelters = data['shelters'];
+
+      if (rawPoints is List) {
+        final points = rawPoints
+            .whereType<Map>()
+            .map((item) {
+              final lat = _toDouble(item['lat'] ?? item['latitude']);
+              final lng = _toDouble(item['lng'] ?? item['longitude']);
+              final count = _toDouble(item['count']);
+              final severity = _toDouble(item['severity']);
+
+              if (lat == null || lng == null) return null;
+              return {
+                'lat': lat,
+                'lng': lng,
+                'count': count ?? 1,
+                'severity': severity ?? 1,
+              };
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList(growable: false);
+
+        liveHeatmapPoints.value = points;
+      }
+
+      if (rawShelters is List) {
+        final shelters = rawShelters
+            .whereType<Map>()
+            .map((item) {
+              final lat = _toDouble(item['lat'] ?? item['latitude']);
+              final lng = _toDouble(item['lng'] ?? item['longitude']);
+              if (lat == null || lng == null) return null;
+
+              return {
+                'id': item['id']?.toString(),
+                'name': (item['name'] ?? 'Shelter').toString(),
+                'lat': lat,
+                'lng': lng,
+                'capacity': item['capacity'],
+                'occupancy': item['occupancy'],
+              };
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList(growable: false);
+
+        liveShelterPins.value = shelters;
+      }
+    });
+
     _socket!.onDisconnect((_) {
       print('Disconnected from Real-Time SOS Socket');
     });
@@ -120,5 +180,11 @@ class SocketService {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
+  }
+
+  double? _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 }

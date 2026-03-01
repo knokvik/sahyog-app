@@ -8,6 +8,7 @@ import 'sos_state_machine.dart';
 ///   v1: local_incidents (legacy)
 ///   v2: local_incidents + retry_count
 ///   v3: sos_incidents (UUID PK, full state machine)
+///   v6: validation_artifacts (temporary AI validation evidence)
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
@@ -26,7 +27,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 6,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -65,8 +66,29 @@ class DatabaseHelper {
         hop_count INTEGER DEFAULT 0,
         uuid_hash INTEGER,
         relay_device_id TEXT,
+        family_contacts TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS validation_artifacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        incident_uuid TEXT,
+        reporter_id TEXT NOT NULL,
+        front_photo_path TEXT,
+        back_photo_path TEXT,
+        audio_path TEXT,
+        quick_score REAL NOT NULL,
+        motion_score REAL NOT NULL,
+        voice_score REAL NOT NULL,
+        confidence REAL NOT NULL,
+        family_contacts TEXT,
+        model_version TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'pending'
       )
     ''');
   }
@@ -125,6 +147,35 @@ class DatabaseHelper {
           'ALTER TABLE sos_incidents ADD COLUMN relay_device_id TEXT',
         );
       } catch (_) {}
+    }
+    if (oldVersion < 5) {
+      // Add family contacts column for mesh relay
+      try {
+        await db.execute(
+          'ALTER TABLE sos_incidents ADD COLUMN family_contacts TEXT',
+        );
+      } catch (_) {}
+    }
+    if (oldVersion < 6) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS validation_artifacts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          incident_uuid TEXT,
+          reporter_id TEXT NOT NULL,
+          front_photo_path TEXT,
+          back_photo_path TEXT,
+          audio_path TEXT,
+          quick_score REAL NOT NULL,
+          motion_score REAL NOT NULL,
+          voice_score REAL NOT NULL,
+          confidence REAL NOT NULL,
+          family_contacts TEXT,
+          model_version TEXT,
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          sync_status TEXT NOT NULL DEFAULT 'pending'
+        )
+      ''');
     }
   }
 
@@ -196,8 +247,9 @@ class DatabaseHelper {
       if (status != null) updates['status'] = status.value;
       if (isSynced != null) updates['is_synced'] = isSynced ? 1 : 0;
       if (retryCount != null) updates['retry_count'] = retryCount;
-      if (deliveryChannel != null)
+      if (deliveryChannel != null) {
         updates['delivery_channel'] = deliveryChannel;
+      }
       if (backendId != null) updates['backend_id'] = backendId;
 
       await txn.update(
@@ -337,6 +389,89 @@ class DatabaseHelper {
       orderBy: 'created_at ASC',
     );
     return rows.map((r) => SosIncident.fromMap(r)).toList();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // AI Validation Artifact Operations
+  // ─────────────────────────────────────────────────────────────
+
+  Future<int> insertValidationArtifact({
+    required String reporterId,
+    required String? incidentUuid,
+    required String? frontPhotoPath,
+    required String? backPhotoPath,
+    required String? audioPath,
+    required double quickScore,
+    required double motionScore,
+    required double voiceScore,
+    required double confidence,
+    required String? familyContacts,
+    required String? modelVersion,
+    Duration ttl = const Duration(hours: 12),
+  }) async {
+    final db = await database;
+    final now = DateTime.now();
+    final expiresAt = now.add(ttl);
+    return db.insert('validation_artifacts', {
+      'incident_uuid': incidentUuid,
+      'reporter_id': reporterId,
+      'front_photo_path': frontPhotoPath,
+      'back_photo_path': backPhotoPath,
+      'audio_path': audioPath,
+      'quick_score': quickScore,
+      'motion_score': motionScore,
+      'voice_score': voiceScore,
+      'confidence': confidence,
+      'family_contacts': familyContacts,
+      'model_version': modelVersion,
+      'created_at': now.toIso8601String(),
+      'expires_at': expiresAt.toIso8601String(),
+      'sync_status': 'pending',
+    });
+  }
+
+  Future<int> markValidationArtifactSynced(int artifactId) async {
+    final db = await database;
+    return db.update(
+      'validation_artifacts',
+      {'sync_status': 'synced'},
+      where: 'id = ?',
+      whereArgs: [artifactId],
+    );
+  }
+
+  Future<int> linkValidationArtifactToIncident(
+    int artifactId,
+    String incidentUuid,
+  ) async {
+    final db = await database;
+    return db.update(
+      'validation_artifacts',
+      {'incident_uuid': incidentUuid},
+      where: 'id = ?',
+      whereArgs: [artifactId],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingValidationArtifacts() async {
+    final db = await database;
+    return db.query(
+      'validation_artifacts',
+      where: 'sync_status = ?',
+      whereArgs: ['pending'],
+      orderBy: 'created_at DESC',
+      limit: 100,
+    );
+  }
+
+  Future<int> purgeExpiredValidationArtifacts() async {
+    final db = await database;
+    final nowIso = DateTime.now().toIso8601String();
+    return db.delete(
+      'validation_artifacts',
+      where: 'expires_at < ?',
+      whereArgs: [nowIso],
+    );
   }
 
   // ─────────────────────────────────────────────────────────────

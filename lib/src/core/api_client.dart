@@ -84,6 +84,33 @@ class ApiClient {
     return _decode(response);
   }
 
+  /// Upload files via multipart/form-data.
+  /// [fieldName] is the form field name (e.g. 'images').
+  /// [filePaths] is a list of local file paths to upload.
+  /// [query] is optional query parameters appended to the URL.
+  Future<dynamic> uploadFiles(
+    String path, {
+    required String fieldName,
+    required List<String> filePaths,
+    Map<String, String>? query,
+    bool withAuth = true,
+  }) async {
+    final uri = Uri.parse('$baseUrl$path').replace(queryParameters: query);
+    final request = http.MultipartRequest('POST', uri);
+
+    final headers = await _headers(withAuth: withAuth);
+    headers.remove('Content-Type'); // multipart sets its own
+    request.headers.addAll(headers);
+
+    for (final fp in filePaths) {
+      request.files.add(await http.MultipartFile.fromPath(fieldName, fp));
+    }
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    return _decode(response);
+  }
+
   Future<Map<String, String>> _headers({required bool withAuth}) async {
     final headers = <String, String>{'Content-Type': 'application/json'};
     if (withAuth) {
