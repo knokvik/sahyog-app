@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:rhino_flutter/rhino.dart';
 import 'package:vibration/vibration.dart';
 
 import 'api_client.dart';
+import 'ai_validator_service.dart';
 import 'database_helper.dart';
 import 'location_service.dart';
 import 'sos_state_machine.dart';
@@ -40,9 +42,32 @@ class VoiceSosService {
 
   bool _initialized = false;
   bool _isHandlingIntent = false;
+  DateTime? _lastDistressSignalAt;
+  String? _lastDistressKeyword;
+  double _lastDistressScore = 0.0;
 
   String? _reporterId;
   ApiClient? _api;
+
+  bool hasRecentDistressSignal({
+    Duration window = const Duration(seconds: 12),
+  }) {
+    final at = _lastDistressSignalAt;
+    if (at == null) return false;
+    return DateTime.now().difference(at) <= window;
+  }
+
+  double recentDistressScore({Duration window = const Duration(seconds: 12)}) {
+    return hasRecentDistressSignal(window: window) ? _lastDistressScore : 0.0;
+  }
+
+  String? recentDistressKeyword({
+    Duration window = const Duration(seconds: 12),
+  }) {
+    return hasRecentDistressSignal(window: window)
+        ? _lastDistressKeyword
+        : null;
+  }
 
   Future<void> initialize({
     required String reporterId,
@@ -120,6 +145,10 @@ class VoiceSosService {
       return;
     }
 
+    _lastDistressSignalAt = DateTime.now();
+    _lastDistressKeyword = 'help';
+    _lastDistressScore = 0.92;
+
     _isHandlingIntent = true;
     try {
       final reporterId = _reporterId;
@@ -142,6 +171,7 @@ class VoiceSosService {
     ApiClient api,
   ) async {
     final db = DatabaseHelper.instance;
+    final validator = AiValidatorService.instance;
 
     // Prevent double‑trigger if a SOS is already active
     final existing = await db.getActiveIncident(reporterId);
@@ -162,11 +192,46 @@ class VoiceSosService {
       );
     } catch (_) {}
 
+    final motion = await validator.collectMotionSample(
+      duration: const Duration(milliseconds: 900),
+    );
+    final voice = VoiceSignalSample(
+      keywordDetected: true,
+      keyword: _lastDistressKeyword ?? 'help',
+      screamScore: 0.85,
+      distressScore: _lastDistressScore.clamp(0.72, 1.0),
+      detectedAt: _lastDistressSignalAt ?? DateTime.now(),
+      source: 'picovoice',
+    );
+    final quickValidation = await validator.runQuickValidation(
+      frontPhotoPath: null,
+      motion: motion,
+      voice: voice,
+    );
+
+    if (!quickValidation.isLikelyHurt) {
+      SosLog.event(
+        'VOICE_SOS',
+        'AI_BLOCKED_FALSE_ALARM',
+        'confidence=${quickValidation.likelyHurtConfidence.toStringAsFixed(2)}',
+      );
+      await _showNotification(
+        title: 'Voice SOS not sent',
+        body:
+            'Possible false trigger detected. Please use manual SOS if needed.',
+      );
+      return;
+    }
+
     final incident = SosIncident(
       reporterId: reporterId,
       lat: pos?.latitude,
       lng: pos?.longitude,
       type: 'Emergency',
+      description: jsonEncode({
+        'quick_validation': quickValidation.toJson(),
+        'trigger': 'voice_auto',
+      }),
       status: SosStatus.activating,
     );
 
@@ -181,6 +246,26 @@ class VoiceSosService {
       incident.uuid,
       status: SosStatus.activeOffline,
     );
+
+    try {
+      await validator.sendValidationToOrchestrator(
+        api: api,
+        result: quickValidation,
+        motion: motion,
+        voice: voice,
+        evidence: SosEvidenceBundle(
+          frontPhotoPath: null,
+          backPhotoPath: null,
+          audioPath: null,
+          capturedAt: DateTime.now(),
+        ),
+        reporterId: reporterId,
+        familyContactsJson: null,
+        localIncidentUuid: incident.uuid,
+      );
+    } catch (e) {
+      SosLog.warn('VOICE_VALIDATION_SEND', '$e');
+    }
 
     // Decide online / offline behaviour
     final results = await _connectivity.checkConnectivity();

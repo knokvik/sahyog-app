@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
+import '../../core/ai_validator_service.dart';
 import '../../core/database_helper.dart';
 import '../../core/location_service.dart';
 import '../../core/models.dart';
 import '../../core/sos_state_machine.dart';
 import '../../core/sos_sync_engine.dart';
+import '../../core/voice_sos_service.dart';
 import '../../theme/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
@@ -13,6 +17,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/socket_service.dart';
 import 'sos_alerts_panel.dart';
+import 'sos_confirmation_timer.dart';
 
 class EmergencySosBox extends StatefulWidget {
   const EmergencySosBox({
@@ -35,10 +40,12 @@ class EmergencySosBox extends StatefulWidget {
 class _EmergencySosBoxState extends State<EmergencySosBox>
     with AutomaticKeepAliveClientMixin {
   final _locationService = LocationService();
+  final _aiValidator = AiValidatorService.instance;
 
   int _sosHoldTicks = 0;
   Timer? _sosHoldTimer;
   bool _sosFired = false;
+  bool _validationInProgress = false;
   String? _activeSosId;
   String? _activeLocalUuid;
 
@@ -62,11 +69,223 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
     }
   }
 
+  VoiceSignalSample _readRecentVoiceSignal() {
+    final hasSignal = VoiceSosService.instance.hasRecentDistressSignal();
+    final rawScore = VoiceSosService.instance.recentDistressScore();
+    return VoiceSignalSample(
+      keywordDetected: hasSignal,
+      keyword: VoiceSosService.instance.recentDistressKeyword(),
+      screamScore: rawScore.clamp(0.0, 1.0),
+      distressScore: hasSignal
+          ? rawScore.clamp(0.72, 1.0)
+          : rawScore.clamp(0.0, 1.0),
+      detectedAt: hasSignal
+          ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(0),
+      source: hasSignal ? 'picovoice' : 'none',
+    );
+  }
+
+  Future<String?> _loadFamilyContactsJson() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = prefs.getString('family_contacts');
+      if (payload != null && payload.isNotEmpty) return payload;
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> _confirmLowConfidenceSend(
+    DistressValidationResult result,
+  ) async {
+    final confidence = (result.likelyHurtConfidence * 100).toStringAsFixed(1);
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Low Distress Confidence'),
+              content: Text('AI confidence is $confidence%. Send SOS anyway?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.criticalRed,
+                  ),
+                  child: const Text('Send SOS'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+  }
+
+  Future<void> _startValidatedSosFlow() async {
+    if (_validationInProgress || _sosFired) return;
+
+    if (mounted) {
+      setState(() {
+        _validationInProgress = true;
+        _sosHoldTicks = 0;
+      });
+    }
+
+    final db = DatabaseHelper.instance;
+    String? quickFrontPhotoPath;
+    try {
+      final familyContactsJson = await _loadFamilyContactsJson();
+      final voiceSignal = _readRecentVoiceSignal();
+      final motionFuture = _aiValidator.collectMotionSample();
+      final quickFrontFuture = _aiValidator.captureSnapshot(
+        lens: CameraLensDirection.front,
+        prefix: 'quick',
+      );
+
+      final motionSignal = await motionFuture;
+      quickFrontPhotoPath = await quickFrontFuture;
+
+      final validationResult = await _aiValidator.runQuickValidation(
+        frontPhotoPath: quickFrontPhotoPath,
+        motion: motionSignal,
+        voice: voiceSignal,
+      );
+
+      if (!mounted) return;
+
+      SosEvidenceBundle evidenceBundle;
+      if (validationResult.isLikelyHurt) {
+        final captureFuture = _aiValidator.captureCountdownEvidence();
+        final shouldProceed =
+            await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (dialogContext) {
+                return SosConfirmationTimer(
+                  validationResult: validationResult,
+                  onCancel: () => Navigator.of(dialogContext).pop(false),
+                  onConfirm: () => Navigator.of(dialogContext).pop(true),
+                );
+              },
+            ) ??
+            false;
+
+        final captured = await captureFuture;
+        evidenceBundle = SosEvidenceBundle(
+          frontPhotoPath: captured.frontPhotoPath ?? quickFrontPhotoPath,
+          backPhotoPath: captured.backPhotoPath,
+          audioPath: captured.audioPath,
+          capturedAt: captured.capturedAt,
+        );
+
+        if (!shouldProceed) {
+          await _aiValidator.discardEvidence(evidenceBundle);
+          if (mounted) {
+            setState(() {
+              _sosFired = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('SOS cancelled before dispatch.'),
+                backgroundColor: AppColors.primaryGreen,
+              ),
+            );
+          }
+          return;
+        }
+      } else {
+        final shouldProceed = await _confirmLowConfidenceSend(validationResult);
+        if (!shouldProceed) {
+          await _aiValidator.discardEvidence(
+            SosEvidenceBundle(
+              frontPhotoPath: quickFrontPhotoPath,
+              backPhotoPath: null,
+              audioPath: null,
+              capturedAt: DateTime.now(),
+            ),
+          );
+          return;
+        }
+
+        evidenceBundle = SosEvidenceBundle(
+          frontPhotoPath: quickFrontPhotoPath,
+          backPhotoPath: null,
+          audioPath: null,
+          capturedAt: DateTime.now(),
+        );
+      }
+
+      final artifactId = await db.insertValidationArtifact(
+        reporterId: widget.user.id,
+        incidentUuid: null,
+        frontPhotoPath: evidenceBundle.frontPhotoPath,
+        backPhotoPath: evidenceBundle.backPhotoPath,
+        audioPath: evidenceBundle.audioPath,
+        quickScore: validationResult.imageScore,
+        motionScore: validationResult.motionScore,
+        voiceScore: validationResult.voiceScore,
+        confidence: validationResult.likelyHurtConfidence,
+        familyContacts: familyContactsJson,
+        modelVersion: validationResult.modelVersion,
+      );
+
+      final localUuid = await _triggerSOS(
+        validationResult: validationResult,
+        validationArtifactId: artifactId,
+        familyContactsJson: familyContactsJson,
+      );
+
+      if (localUuid != null) {
+        try {
+          await _aiValidator.sendValidationToOrchestrator(
+            api: widget.api,
+            result: validationResult,
+            motion: motionSignal,
+            voice: voiceSignal,
+            evidence: evidenceBundle,
+            reporterId: widget.user.id,
+            familyContactsJson: familyContactsJson,
+            localIncidentUuid: localUuid,
+          );
+          await db.markValidationArtifactSynced(artifactId);
+        } catch (e) {
+          SosLog.warn(
+            'ORCHESTRATOR_VALIDATE',
+            'Validation package queued locally: $e',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Validation failed. Please retry. ($e)'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _validationInProgress = false;
+          _sosHoldTicks = 0;
+        });
+      }
+    }
+  }
+
   // ─────────────────────────────────────────────────────────
   // SOS Activation — State Machine Driven
   // ─────────────────────────────────────────────────────────
 
-  Future<void> _triggerSOS() async {
+  Future<String?> _triggerSOS({
+    DistressValidationResult? validationResult,
+    int? validationArtifactId,
+    String? familyContactsJson,
+  }) async {
     final db = DatabaseHelper.instance;
 
     // Prevent double-trigger: check if already active
@@ -80,7 +299,7 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
           _sosFired = true;
         });
       }
-      return;
+      return existing.uuid;
     }
 
     // 1. Fetch location (12s timeout)
@@ -91,12 +310,21 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
       );
     } catch (_) {}
 
+    final validationSummary = validationResult == null
+        ? null
+        : jsonEncode({
+            'quick_validation': validationResult.toJson(),
+            'artifact_id': validationArtifactId,
+          });
+
     // 2. Create SOS incident
     final incident = SosIncident(
       reporterId: widget.user.id,
       lat: pos?.latitude,
       lng: pos?.longitude,
       type: 'Emergency',
+      description: validationSummary,
+      familyContacts: familyContactsJson,
       status: SosStatus.activating,
     );
 
@@ -112,6 +340,12 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
       incident.uuid,
       status: SosStatus.activeOffline,
     );
+    if (validationArtifactId != null) {
+      await db.linkValidationArtifactToIncident(
+        validationArtifactId,
+        incident.uuid,
+      );
+    }
 
     if (mounted) {
       setState(() {
@@ -147,6 +381,7 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
         ),
       );
     }
+    return incident.uuid;
   }
 
   // ─────────────────────────────────────────────────────────
@@ -260,6 +495,12 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
   }
 
   @override
+  void dispose() {
+    _sosHoldTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   bool get wantKeepAlive => true;
 
   Widget _buildLeftSosButton() {
@@ -273,6 +514,9 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
               final active = await DatabaseHelper.instance.getActiveIncident(
                 widget.user.id,
               );
+              if (!context.mounted || !mounted) {
+                return;
+              }
               if (mounted) {
                 SosAlertsPanel.show(
                   context: context,
@@ -384,13 +628,13 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
             boxShadow: [
               if (_activeSosId != null || _sosFired)
                 BoxShadow(
-                  color: AppColors.criticalRed.withOpacity(0.4),
+                  color: AppColors.criticalRed.withValues(alpha: 0.4),
                   blurRadius: 15,
                   spreadRadius: 2,
                 )
               else if (_sosHoldTicks > 0)
                 BoxShadow(
-                  color: AppColors.criticalRed.withOpacity(0.3),
+                  color: AppColors.criticalRed.withValues(alpha: 0.3),
                   blurRadius: 10,
                   spreadRadius: progress * 5,
                 ),
@@ -509,7 +753,7 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                       )
                     : GestureDetector(
                         onTapDown: (_) {
-                          if (_sosFired) return;
+                          if (_sosFired || _validationInProgress) return;
                           _sosHoldTicks = 0;
                           _sosHoldTimer = Timer.periodic(
                             const Duration(milliseconds: 100),
@@ -519,8 +763,7 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                                   _sosHoldTicks++;
                                   if (_sosHoldTicks >= 50) {
                                     _sosHoldTimer?.cancel();
-                                    _sosFired = true;
-                                    _triggerSOS();
+                                    _startValidatedSosFlow();
                                   }
                                 });
                               }
@@ -545,8 +788,9 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                                     widthFactor: progress,
                                     child: Container(
                                       decoration: BoxDecoration(
-                                        color: AppColors.criticalRed
-                                            .withOpacity(0.2),
+                                        color: AppColors.criticalRed.withValues(
+                                          alpha: 0.2,
+                                        ),
                                         borderRadius: BorderRadius.circular(14),
                                       ),
                                     ),
@@ -564,11 +808,13 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                                         crossAxisAlignment:
                                             CrossAxisAlignment.center,
                                         children: [
-                                          const FittedBox(
+                                          FittedBox(
                                             fit: BoxFit.scaleDown,
                                             child: Text(
-                                              'HOLD FOR SOS',
-                                              style: TextStyle(
+                                              _validationInProgress
+                                                  ? 'VALIDATING...'
+                                                  : 'HOLD FOR SOS',
+                                              style: const TextStyle(
                                                 color: AppColors.criticalRed,
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 18,
@@ -580,7 +826,9 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                                           FittedBox(
                                             fit: BoxFit.scaleDown,
                                             child: Text(
-                                              (_sosHoldTicks > 0)
+                                              _validationInProgress
+                                                  ? 'Quick AI check in progress'
+                                                  : (_sosHoldTicks > 0)
                                                   ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
                                                   : 'Hold 5s for help',
                                               style: TextStyle(
@@ -705,9 +953,9 @@ class _SyncStatusStrip extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
