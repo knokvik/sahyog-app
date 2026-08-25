@@ -30,10 +30,13 @@ class CoordinatorDashboardTab extends StatefulWidget {
 
 class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   final MapController _miniMapController = MapController();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   bool _loading = true;
   String _error = '';
   String _searchQuery = '';
+  bool _isSearchExpanded = false;
   Timer? _pollTimer;
 
   Map<String, dynamic> _ctx = {};
@@ -47,6 +50,13 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   void initState() {
     super.initState();
     _load();
+    _searchFocusNode.addListener(() {
+      if (_searchFocusNode.hasFocus) {
+        setState(() => _isSearchExpanded = true);
+      } else if (_searchController.text.isEmpty) {
+        setState(() => _isSearchExpanded = false);
+      }
+    });
     _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted) _load(silent: true);
     });
@@ -55,6 +65,8 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -107,58 +119,94 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 10),
-                  if (_error.isNotEmpty)
-                    Text(
-                      _error,
-                      style: const TextStyle(color: AppColors.criticalRed),
+    return GestureDetector(
+      onTap: () {
+        if (_searchFocusNode.hasFocus) {
+          _searchFocusNode.unfocus();
+          if (_searchController.text.isEmpty) {
+            setState(() => _isSearchExpanded = false);
+          }
+        }
+      },
+      behavior: HitTestBehavior.translucent,
+      child: Scaffold(
+        body: Column(
+          children: [
+            if (_loading) const LinearProgressIndicator(minHeight: 2),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildTopSearchAndMapArea(),
+                    const SizedBox(height: 12),
+                    if (_error.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Text(
+                          _error,
+                          style: const TextStyle(color: AppColors.criticalRed),
+                        ),
+                      ),
+                    _buildStatsRow(),
+                    const SizedBox(height: 12),
+                    EmergencySosBox(
+                      user: widget.user,
+                      api: widget.api,
+                      onSosTap: () {
+                        final alerts = SocketService.instance.liveSosAlerts.value;
+                        if (alerts.isNotEmpty) {
+                          DatabaseHelper.instance
+                              .getActiveIncident(widget.user.id)
+                              .then((active) {
+                                if (context.mounted) {
+                                  SosAlertsPanel.show(
+                                    context: context,
+                                    alerts: alerts,
+                                    activeLocalUuid: active?.uuid,
+                                    onCancelSos: null,
+                                    onGoToSosPanels: () => widget.onNavigate(3),
+                                  );
+                                }
+                              });
+                        }
+                      },
+                      onSosLocationTap: (ll) => widget.onNavigate(3, target: ll),
                     ),
-                  _buildMiniMap(),
-                  const SizedBox(height: 12),
-                  _buildStatsRow(),
-                  const SizedBox(height: 12),
-                  EmergencySosBox(
-                    user: widget.user,
-                    api: widget.api,
-                    onSosTap: () {
-                      final alerts = SocketService.instance.liveSosAlerts.value;
-                      if (alerts.isNotEmpty) {
-                        DatabaseHelper.instance
-                            .getActiveIncident(widget.user.id)
-                            .then((active) {
-                              if (context.mounted) {
-                                SosAlertsPanel.show(
-                                  context: context,
-                                  alerts: alerts,
-                                  activeLocalUuid: active?.uuid,
-                                  onCancelSos: null,
-                                  onGoToSosPanels: () => widget.onNavigate(3),
-                                );
-                              }
-                            });
-                      }
-                    },
-                    onSosLocationTap: (ll) => widget.onNavigate(3, target: ll),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildRecentTasks(),
-                  const SizedBox(height: 12),
-                  _buildRecentSos(),
-                  const SizedBox(height: 80), // Padding for FAB
-                ],
+                    const SizedBox(height: 12),
+                    _buildRecentTasks(),
+                    const SizedBox(height: 12),
+                    _buildRecentSos(),
+                    const SizedBox(height: 80), // Padding for FAB
+                  ],
+                ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopSearchAndMapArea() {
+    return SizedBox(
+      height: 246,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 66,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildMiniMap(),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildHeader(),
           ),
         ],
       ),
@@ -166,41 +214,268 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
   }
 
   Widget _buildHeader() {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(30),
-        side: BorderSide(color: Colors.grey.withOpacity(0.3), width: 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppColors.primaryGreen,
-              foregroundColor: Colors.white,
-              child: Text(
-                widget.user.name.isNotEmpty
-                    ? widget.user.name[0].toUpperCase()
-                    : '?',
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextField(
-                onChanged: (val) => setState(() => _searchQuery = val),
-                decoration: const InputDecoration(
-                  hintText: 'Search alerts, tasks...',
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                ),
-              ),
-            ),
-            const Icon(Icons.search, color: Colors.grey),
-          ],
+    final String initial = widget.user.name.isNotEmpty
+        ? widget.user.name[0].toUpperCase()
+        : 'N';
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
+      height: _isSearchExpanded ? 246 : 56,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(_isSearchExpanded ? 20 : 32),
+        border: Border.all(
+          color: _isSearchExpanded
+              ? AppColors.primaryGreen.withValues(alpha: 0.6)
+              : Colors.grey.withValues(alpha: 0.25),
+          width: _isSearchExpanded ? 1.6 : 1.0,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: _isSearchExpanded
+                ? AppColors.primaryGreen.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.03),
+            blurRadius: _isSearchExpanded ? 12 : 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 52,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: _isSearchExpanded ? 14 : 10,
+                vertical: 2,
+              ),
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 2, right: 12),
+                    child: _AnimatedAvatarRing(initial: initial),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      onChanged: (val) => setState(() => _searchQuery = val),
+                      decoration: const InputDecoration(
+                        hintText: 'Search alerts, tasks...',
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                  if (_isSearchExpanded || _searchController.text.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                      onPressed: () {
+                        _searchController.clear();
+                        _searchFocusNode.unfocus();
+                        setState(() {
+                          _searchQuery = '';
+                          _isSearchExpanded = false;
+                        });
+                      },
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8.0),
+                      child: Icon(Icons.search, color: Colors.grey),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_isSearchExpanded) ...[
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: Colors.grey.withValues(alpha: 0.15),
+            ),
+            Expanded(
+              child: _buildSearchResultsContent(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResultsContent() {
+    final query = _searchQuery.trim().toLowerCase();
+
+    final matchingSos = _recentSos.where((s) {
+      final name = (s['reporter_name'] ?? s['name'] ?? '').toString().toLowerCase();
+      final type = (s['type'] ?? '').toString().toLowerCase();
+      return name.contains(query) || type.contains(query);
+    }).toList();
+
+    final matchingTasks = _recentTasks.where((t) {
+      final title = (t['title'] ?? t['description'] ?? '').toString().toLowerCase();
+      return title.contains(query);
+    }).toList();
+
+    final matchingZones = _zones.where((z) {
+      final name = (z['name'] ?? z['disaster_name'] ?? '').toString().toLowerCase();
+      return name.contains(query);
+    }).toList();
+
+    final int totalMatches = matchingSos.length + matchingTasks.length + matchingZones.length;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: query.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.manage_search, size: 36, color: AppColors.primaryGreen.withValues(alpha: 0.6)),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Search alerts, relief tasks, or disaster zones',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : totalMatches == 0
+              ? const Center(
+                  child: Text(
+                    'No matching incidents or tasks found',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                )
+              : Material(
+                  color: Colors.transparent,
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      if (matchingSos.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6, bottom: 4),
+                          child: Text(
+                            'SOS ALERTS',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.criticalRed,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+                        ...matchingSos.map((sos) => ListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: AppColors.criticalRed.withValues(alpha: 0.15),
+                                child: const Icon(Icons.sos, color: AppColors.criticalRed, size: 16),
+                              ),
+                              title: Text(
+                                sos['reporter_name'] ?? sos['type'] ?? 'SOS Alert',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                sos['status'] ?? 'triggered',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              trailing: const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey),
+                              onTap: () => widget.onNavigate(3),
+                            )),
+                      ],
+                      if (matchingTasks.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 4),
+                          child: Text(
+                            'TASKS',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.blueAccent,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+                        ...matchingTasks.map((t) => ListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: Colors.blueAccent.withValues(alpha: 0.15),
+                                child: const Icon(Icons.assignment, color: Colors.blueAccent, size: 16),
+                              ),
+                              title: Text(
+                                t['title'] ?? 'Task',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                t['status'] ?? 'pending',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              trailing: const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey),
+                              onTap: () => widget.onNavigate(2),
+                            )),
+                      ],
+                      if (matchingZones.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 4),
+                          child: Text(
+                            'RELIEF ZONES',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.orange,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+                        ...matchingZones.map((z) => ListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: Colors.orange.withValues(alpha: 0.15),
+                                child: const Icon(Icons.hub, color: Colors.orange, size: 16),
+                              ),
+                              title: Text(
+                                z['name'] ?? 'Zone',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              trailing: const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey),
+                              onTap: () => widget.onNavigate(1),
+                            )),
+                      ],
+                    ],
+                  ),
+                ),
     );
   }
 
@@ -248,7 +523,7 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                     DatabaseHelper.instance
                         .getActiveIncident(widget.user.id)
                         .then((active) {
-                          if (context.mounted) {
+                          if (mounted) {
                             SosAlertsPanel.show(
                               context: context,
                               alerts: alerts,
@@ -496,60 +771,130 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                 status.contains(_searchQuery.toLowerCase());
           }).toList();
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Recent Tasks',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Recent Tasks',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (filtered.isNotEmpty)
+                Text(
+                  '${filtered.length} total',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (filtered.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('No recent tasks.', style: TextStyle(color: Colors.grey)),
             ),
-            const SizedBox(height: 12),
-            if (filtered.isEmpty)
-              const Text('No tasks.', style: TextStyle(color: Colors.grey))
-            else
-              ...filtered.map((task) {
-                final title = (task['title'] ?? task['type'] ?? 'Task')
-                    .toString();
+          )
+        else
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: filtered.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, i) {
+                final task = filtered[i];
+                final title = (task['title'] ?? task['type'] ?? 'Task').toString();
                 final status = (task['status'] ?? 'pending').toString();
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                final isDone = status == 'completed' || status == 'resolved';
+                final isPending = status == 'pending';
+
+                return Container(
+                  constraints: const BoxConstraints(minWidth: 160, maxWidth: 220),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.grey.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.02),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black.withValues(alpha: 0.7),
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: isDone
+                            ? AppColors.primaryGreen.withValues(alpha: 0.15)
+                            : isPending
+                                ? Colors.amber.withValues(alpha: 0.15)
+                                : Colors.blue.withValues(alpha: 0.15),
+                        child: Icon(
+                          isDone
+                              ? Icons.check_circle_outline
+                              : isPending
+                                  ? Icons.pending_actions
+                                  : Icons.directions_run,
+                          size: 18,
+                          color: isDone
+                              ? AppColors.primaryGreen
+                              : isPending
+                                  ? Colors.amber.shade800
+                                  : Colors.blue.shade700,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          title,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                      Text(
-                        status.toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              status.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: isDone
+                                    ? AppColors.primaryGreen
+                                    : isPending
+                                        ? Colors.amber.shade800
+                                        : Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 );
-              }),
-          ],
-        ),
-      ),
+              },
+            ),
+          ),
+      ],
     );
   }
 
@@ -565,71 +910,129 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
                 status.contains(_searchQuery.toLowerCase());
           }).toList();
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Recent SOS Alerts',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Recent SOS Alerts',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (filtered.isNotEmpty)
+                Text(
+                  '${filtered.length} active',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (filtered.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('No SOS alerts.', style: TextStyle(color: Colors.grey)),
             ),
-            const SizedBox(height: 12),
-            if (filtered.isEmpty)
-              const Text('No SOS alerts.', style: TextStyle(color: Colors.grey))
-            else
-              ...filtered.map((sos) {
+          )
+        else
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: filtered.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, i) {
+                final sos = filtered[i];
                 final status = (sos['status'] ?? 'triggered').toString();
-                final name =
-                    (sos['reporter_name'] ?? sos['volunteer_name'] ?? 'Unknown')
-                        .toString();
+                final isActive = status == 'triggered';
+                final name = (sos['reporter_name'] ?? sos['volunteer_name'] ?? 'Citizen Alert').toString();
+
                 return InkWell(
                   onTap: () {
-                    // Navigate to map tab
                     widget.onNavigate(1);
                   },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 4,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 165, maxWidth: 230),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isActive
+                            ? AppColors.criticalRed.withValues(alpha: 0.3)
+                            : Colors.grey.withValues(alpha: 0.2),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isActive
+                              ? AppColors.criticalRed.withValues(alpha: 0.04)
+                              : Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppColors.criticalRed,
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: isActive
+                              ? AppColors.criticalRed.withValues(alpha: 0.15)
+                              : Colors.grey.withValues(alpha: 0.15),
+                          child: Icon(
+                            isActive ? Icons.sos : Icons.check_circle_outline,
+                            size: 18,
+                            color: isActive
+                                ? AppColors.criticalRed
+                                : Colors.grey.shade600,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            name,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                        Text(
-                          status.toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey,
-                            fontWeight: FontWeight.bold,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                isActive ? 'LIVE ALERT' : status.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isActive
+                                      ? AppColors.criticalRed
+                                      : Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
                 );
-              }),
-          ],
-        ),
-      ),
+              },
+            ),
+          ),
+      ],
     );
   }
 
@@ -642,5 +1045,77 @@ class _CoordinatorDashboardTabState extends State<CoordinatorDashboardTab> {
       default:
         return AppColors.criticalRed;
     }
+  }
+}
+
+class _AnimatedAvatarRing extends StatefulWidget {
+  const _AnimatedAvatarRing({required this.initial});
+  final String initial;
+
+  @override
+  State<_AnimatedAvatarRing> createState() => _AnimatedAvatarRingState();
+}
+
+class _AnimatedAvatarRingState extends State<_AnimatedAvatarRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cardColor = Theme.of(context).cardColor;
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: SweepGradient(
+              transform: GradientRotation(_ctrl.value * 2 * 3.14159265),
+              colors: [
+                Colors.grey.withValues(alpha: 0.15),
+                Colors.grey.withValues(alpha: 0.85),
+                Colors.grey.withValues(alpha: 0.15),
+              ],
+            ),
+          ),
+          padding: const EdgeInsets.all(1.8),
+          child: Container(
+            padding: const EdgeInsets.all(2.2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: cardColor,
+            ),
+            child: CircleAvatar(
+              backgroundColor: AppColors.primaryGreen,
+              foregroundColor: Colors.white,
+              child: Text(
+                widget.initial,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

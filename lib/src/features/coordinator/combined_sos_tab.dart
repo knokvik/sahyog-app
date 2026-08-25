@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../../core/location_service.dart';
 import '../../core/socket_service.dart';
 import '../../core/models.dart';
 import '../../theme/app_colors.dart';
@@ -23,6 +24,7 @@ class _CombinedSosTabState extends State<CombinedSosTab> {
   bool _loading = true;
   String _error = '';
   Timer? _pollTimer;
+  final Set<String> _expandedAlertIds = {};
 
   @override
   void initState() {
@@ -106,8 +108,16 @@ class _CombinedSosTabState extends State<CombinedSosTab> {
       length: 2,
       child: Column(
         children: [
-          const TabBar(
-            tabs: [
+          TabBar(
+            labelStyle: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w400,
+              fontSize: 14,
+            ),
+            tabs: const [
               Tab(text: 'Missing Persons'),
               Tab(text: 'SOS Alerts'),
             ],
@@ -134,16 +144,7 @@ class _CombinedSosTabState extends State<CombinedSosTab> {
             onRefresh: _load,
             child: ListView(
               padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  'SOS Monitoring',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 4),
-                const Text('SOS alerts within your area.'),
-                const SizedBox(height: 10),
+              children: [              
                 if (_error.isNotEmpty)
                   Text(
                     _error,
@@ -166,193 +167,208 @@ class _CombinedSosTabState extends State<CombinedSosTab> {
                                 alert['reporter_phone'] ??
                                 'Sahayanet User')
                             .toString();
+                    final desc = (alert['description'] ?? '').toString();
+                    final double? lat = double.tryParse((alert['latitude'] ?? alert['lat'] ?? '').toString());
+                    final double? lng = double.tryParse((alert['longitude'] ?? alert['lng'] ?? '').toString());
+
+                    final isExpanded = _expandedAlertIds.contains(id);
 
                     return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: isActive ? 2 : 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: isActive
-                              ? AppColors.criticalRed.withOpacity(0.3)
-                              : Colors.grey.withOpacity(0.2),
-                          width: 1,
-                        ),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          color: isActive
-                              ? AppColors.criticalRed.withOpacity(0.04)
-                              : null,
-                        ),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            if (_expandedAlertIds.contains(id)) {
+                              _expandedAlertIds.remove(id);
+                            } else {
+                              _expandedAlertIds.add(id);
+                            }
+                          });
+                        },
                         child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    backgroundColor: isActive
-                                        ? AppColors.criticalRed
-                                        : Colors.grey.shade400,
-                                    foregroundColor: Colors.white,
-                                    child: Icon(
-                                      isActive ? Icons.sos : Icons.check_circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      isActive ? '🔴 SOS ACTIVE' : 'SOS Alert',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 15,
+                          padding: const EdgeInsets.all(12.0),
+                          child: AnimatedSize(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeInOutCubic,
+                            alignment: Alignment.topCenter,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 28,
+                                      backgroundColor: isActive
+                                          ? AppColors.criticalRed.withValues(alpha: 0.15)
+                                          : Colors.grey.withValues(alpha: 0.15),
+                                      child: Icon(
+                                        isActive ? Icons.sos : Icons.check_circle,
+                                        size: 28,
                                         color: isActive
                                             ? AppColors.criticalRed
-                                            : null,
+                                            : Colors.grey.shade600,
                                       ),
                                     ),
-                                  ),
-                                  if (isActive)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.criticalRed,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Icon(
-                                            Icons.circle,
-                                            color: Colors.white,
-                                            size: 8,
-                                          ),
-                                          SizedBox(width: 4),
                                           Text(
-                                            'LIVE',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 11,
-                                              letterSpacing: 1,
+                                            isActive ? 'SOS Active' : 'SOS Alert',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
                                             ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Reporter: $reporterName • Status: ${status.toUpperCase()}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey,
+                                            ),
+                                            maxLines: isExpanded ? 3 : 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ],
                                       ),
-                                    )
-                                  else
-                                    Chip(label: Text(status.toUpperCase())),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Reporter: $reporterName',
-                                style: TextStyle(
-                                  fontWeight: isActive
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                              if (alert['media_urls'] is List &&
-                                  (alert['media_urls'] as List).isNotEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.only(top: 4),
-                                  child: Text('📎 Has media attachments'),
-                                ),
-                              const SizedBox(height: 8),
-                              if (widget.user.isCoordinator ||
-                                  widget.user.isVolunteer)
-                                Wrap(
-                                  spacing: 8,
-                                  children: [
-                                    OutlinedButton(
-                                      onPressed:
-                                          id.isEmpty ||
-                                              status == 'acknowledged' ||
-                                              status == 'resolved'
-                                          ? null
-                                          : () => _updateStatus(
-                                              id,
-                                              'acknowledged',
-                                            ),
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 0,
-                                        ),
-                                        minimumSize: const Size(0, 32),
-                                        side: BorderSide(
-                                          color: Colors.blue.withOpacity(0.5),
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Acknowledge',
-                                        style: TextStyle(fontSize: 12),
-                                      ),
                                     ),
-                                    FilledButton.tonal(
-                                      onPressed:
-                                          id.isEmpty || status == 'resolved'
-                                          ? null
-                                          : () => _updateStatus(id, 'resolved'),
-                                      style: isActive
-                                          ? FilledButton.styleFrom(
-                                              backgroundColor: AppColors
-                                                  .criticalRed
-                                                  .withOpacity(0.8),
-                                              foregroundColor: Colors.white,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 0,
-                                                  ),
-                                              minimumSize: const Size(0, 32),
-                                            )
-                                          : FilledButton.styleFrom(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 0,
-                                                  ),
-                                              minimumSize: const Size(0, 32),
-                                            ),
-                                      child: const Text(
-                                        'Resolve',
-                                        style: TextStyle(fontSize: 12),
+                                    const SizedBox(width: 8),
+                                    if (isActive)
+                                      const Chip(
+                                        label: Text(
+                                          'LIVE',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        visualDensity: VisualDensity.compact,
+                                      )
+                                    else
+                                      Chip(
+                                        label: Text(
+                                          status.toUpperCase(),
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                  ],
+                                ),
+                                if (isExpanded) ...[
+                                  if (desc.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      desc,
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ],
+                                  if (alert['media_urls'] is List &&
+                                      (alert['media_urls'] as List).isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    const Row(
+                                      children: [
+                                        Icon(Icons.attachment, size: 14, color: Colors.grey),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Has media attachments',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  if (lat != null && lng != null) ...[
+                                    const SizedBox(height: 10),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => LocationService.openDirections(
+                                          lat,
+                                          lng,
+                                          label: reporterName,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.directions_outlined,
+                                          size: 16,
+                                          color: AppColors.primaryGreen,
+                                        ),
+                                        label: const Text(
+                                          'Get Directions in Maps',
+                                          style: TextStyle(fontSize: 12),
+                                        ),
                                       ),
                                     ),
                                   ],
-                                )
-                              else if (status == 'triggered')
-                                OutlinedButton.icon(
-                                  onPressed: () =>
-                                      _updateStatus(id, 'cancelled'),
-                                  icon: const Icon(Icons.cancel, size: 16),
-                                  label: const Text(
-                                    'Cancel Request',
-                                    style: TextStyle(fontSize: 12),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.red.withOpacity(
-                                      0.8,
+                                  if (widget.user.isCoordinator ||
+                                      widget.user.isVolunteer) ...[
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton(
+                                            onPressed: id.isEmpty ||
+                                                    status == 'acknowledged' ||
+                                                    status == 'resolved'
+                                                ? null
+                                                : () => _updateStatus(
+                                                      id,
+                                                      'acknowledged',
+                                                    ),
+                                            child: const Text(
+                                              'Acknowledge',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: FilledButton.tonal(
+                                            onPressed: id.isEmpty || status == 'resolved'
+                                                ? null
+                                                : () => _updateStatus(
+                                                      id,
+                                                      'resolved',
+                                                    ),
+                                            child: const Text(
+                                              'Resolve',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 0,
+                                  ] else if (status == 'triggered') ...[
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => _updateStatus(id, 'cancelled'),
+                                        icon: const Icon(
+                                          Icons.cancel_outlined,
+                                          size: 16,
+                                        ),
+                                        label: const Text(
+                                          'Cancel Request',
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: AppColors.criticalRed,
+                                        ),
+                                      ),
                                     ),
-                                    minimumSize: const Size(0, 32),
-                                    side: BorderSide(
-                                      color: Colors.red.withOpacity(0.3),
-                                    ),
-                                  ),
-                                ),
-                            ],
+                                  ],
+                                ],
+                              ],
+                            ),
                           ),
                         ),
                       ),

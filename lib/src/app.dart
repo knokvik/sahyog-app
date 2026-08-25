@@ -8,7 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'features/auth/auth_gate.dart';
 
 const clerkPublishableKey =
-    'pk_test_ZGlyZWN0LWhlcm1pdC04NC5jbGVyay5hY2NvdW50cy5kZXYk';
+    'pk_test_c2V0LWdhemVsbGUtNTI3Ny5jbGVyay5hY2NvdW50cy5kZXYk';
 
 class SahyogApp extends StatelessWidget {
   const SahyogApp({super.key});
@@ -48,63 +48,80 @@ class _SignedOutScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const SizedBox(height: 48),
+                const SizedBox(height: 36),
                 Hero(
                   tag: 'app_logo',
                   child: Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(28),
+                      borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 20,
-                          offset: const Offset(0, 10),
+                          offset: const Offset(0, 8),
                         ),
                       ],
+                      border: Border.all(
+                        color: Colors.grey.withValues(alpha: 0.15),
+                        width: 1,
+                      ),
                     ),
-                    child: Image.asset(
-                      'lib/assets/favicon.png',
-                      height: 60,
-                      width: 60,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        'lib/assets/favicon.png',
+                        height: 52,
+                        width: 52,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 18),
                 Text(
                   'Sahyog',
                   style: Theme.of(context).textTheme.displaySmall?.copyWith(
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF27B469),
+                    letterSpacing: -0.5,
                   ),
                 ),
-                Text(
-                  'DISASTER RESPONSE NETWORK',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Colors.grey[500],
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.w800,
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF27B469).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'DISASTER RESPONSE NETWORK',
+                    style: TextStyle(
+                      color: Color(0xFF27B469),
+                      letterSpacing: 1.2,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 36),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 400),
                   child: const _CustomSignInArea(),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 36),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.lock_outline, size: 14, color: Colors.grey[400]),
                     const SizedBox(width: 8),
                     Text(
-                      'Secure SSL Connection',
+                      'Secure SSL Encrypted Connection',
                       style: TextStyle(color: Colors.grey[400], fontSize: 12),
                     ),
                   ],
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
               ],
             ),
           ),
@@ -120,17 +137,21 @@ class _CustomSignInArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 30,
-            offset: const Offset(0, 15),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
         ],
+        border: Border.all(
+          color: Colors.grey.withValues(alpha: 0.15),
+          width: 1,
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -138,7 +159,7 @@ class _CustomSignInArea extends StatelessWidget {
           const Text(
             'Sign In',
             style: TextStyle(
-              fontSize: 26,
+              fontSize: 24,
               fontWeight: FontWeight.w900,
               color: Color(0xFF0F172A),
               letterSpacing: -0.5,

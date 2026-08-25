@@ -275,9 +275,12 @@ class _UserAppShellState extends State<UserAppShell> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              _titles[_index],
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            Flexible(
+              fit: FlexFit.loose,
+              child: Text(
+                _titles[_index],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
             const SizedBox(width: 8),
             const _RoleChip(label: 'CITIZEN', color: Colors.orange),
@@ -309,28 +312,28 @@ class _UserAppShellState extends State<UserAppShell> {
         duration: const Duration(milliseconds: 300),
         child: tabs[_index],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: _StyledBottomNavBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
+            selectedIcon: Icon(Icons.dashboard_rounded),
             label: 'Dashboard',
           ),
           NavigationDestination(
             icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map),
+            selectedIcon: Icon(Icons.map_rounded),
             label: 'Map',
           ),
           NavigationDestination(
             icon: Icon(Icons.people_alt_outlined),
-            selectedIcon: Icon(Icons.people_alt),
+            selectedIcon: Icon(Icons.people_alt_rounded),
             label: 'Missing',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
           ),
         ],
@@ -408,9 +411,12 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              _titles[_index],
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            Flexible(
+              fit: FlexFit.loose,
+              child: Text(
+                _titles[_index],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
             const SizedBox(width: 8),
             const _RoleChip(label: 'VOLUNTEER', color: AppColors.primaryGreen),
@@ -442,33 +448,33 @@ class _GeneralAppShellState extends State<GeneralAppShell> {
         duration: const Duration(milliseconds: 300),
         child: tabs[_index],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: _StyledBottomNavBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
           NavigationDestination(
             icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map),
+            selectedIcon: Icon(Icons.map_rounded),
             label: 'Map',
           ),
           NavigationDestination(
             icon: Icon(Icons.sos_outlined),
-            selectedIcon: Icon(Icons.sos),
+            selectedIcon: Icon(Icons.sos_rounded),
             label: 'SOS',
           ),
           NavigationDestination(
             icon: Icon(Icons.assignment_outlined),
-            selectedIcon: Icon(Icons.assignment),
+            selectedIcon: Icon(Icons.assignment_rounded),
             label: 'Tasks',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
           ),
         ],
@@ -566,12 +572,15 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              _titles[_index],
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            Flexible(
+              fit: FlexFit.loose,
+              child: Text(
+                _titles[_index],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
             const SizedBox(width: 8),
-            const _RoleChip(label: 'COORDINATOR', color: AppColors.infoBlue),
+            const _RoleChip(label: 'TEAM LEAD', color: AppColors.infoBlue),
           ],
         ),
         actions: [
@@ -600,33 +609,33 @@ class _CoordinatorAppShellState extends State<CoordinatorAppShell> {
         duration: const Duration(milliseconds: 300),
         child: tabs[_index],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: _StyledBottomNavBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
+            selectedIcon: Icon(Icons.dashboard_rounded),
             label: 'Dashboard',
           ),
           NavigationDestination(
             icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map),
+            selectedIcon: Icon(Icons.map_rounded),
             label: 'Map',
           ),
           NavigationDestination(
-            icon: Icon(Icons.admin_panel_settings_outlined),
-            selectedIcon: Icon(Icons.admin_panel_settings),
+            icon: Icon(Icons.hub_outlined),
+            selectedIcon: Icon(Icons.hub_rounded),
             label: 'Operations',
           ),
           NavigationDestination(
             icon: Icon(Icons.sos_outlined),
-            selectedIcon: Icon(Icons.sos),
+            selectedIcon: Icon(Icons.sos_rounded),
             label: 'SOS',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
           ),
         ],
@@ -646,7 +655,7 @@ class _RoleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
@@ -702,6 +711,32 @@ class _RefreshControlState extends State<_RefreshControl>
     return RotationTransition(
       turns: _ctrl,
       child: IconButton(onPressed: _handle, icon: const Icon(Icons.refresh)),
+    );
+  }
+}
+
+class _StyledBottomNavBar extends StatelessWidget {
+  const _StyledBottomNavBar({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+    required this.destinations,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+  final List<NavigationDestination> destinations;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Theme.of(context).navigationBarTheme.backgroundColor,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: NavigationBar(
+        selectedIndex: selectedIndex,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+        onDestinationSelected: onDestinationSelected,
+        destinations: destinations,
+      ),
     );
   }
 }
