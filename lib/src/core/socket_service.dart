@@ -24,14 +24,25 @@ class SocketService {
       ValueNotifier({});
 
   void initialize([BuildContext? context, bool isCoordinatorOrAdmin = true]) {
-    if (_socket != null) return;
+    if (_socket != null) {
+      if (!_socket!.connected) {
+        _socket!.connect();
+      }
+      return;
+    }
 
     // Connect to the Node Express server url
-    _socket = IO.io(AppConfig.baseUrl, <String, dynamic>{
-      'transports': ['websocket', 'polling'],
-      'autoConnect': true,
-      'path': '/socket.io/', // Explicit path for reliability
-    });
+    _socket = IO.io(
+      AppConfig.baseUrl,
+      IO.OptionBuilder()
+          .setTransports(['websocket', 'polling'])
+          .enableAutoConnect()
+          .enableReconnection()
+          .setReconnectionAttempts(999)
+          .setReconnectionDelay(1000)
+          .setPath('/socket.io')
+          .build(),
+    );
 
     _socket!.onConnectError((data) {
       debugPrint('[Socket] Connection Error: $data');
@@ -48,11 +59,12 @@ class SocketService {
       // 1. Show global snackbar pop-up across the entire app
       final messenger = SahyogApp.scaffoldMessengerKey.currentState;
       if (messenger != null) {
+        messenger.clearSnackBars();
         messenger.showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
+                const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -61,12 +73,12 @@ class SocketService {
                     children: [
                       Text(
                         'EMERGENCY SOS: ${data['type'] ?? 'Help Needed'}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       if (data['reporter_name'] != null)
                         Text(
                           'From: ${data['reporter_name']}',
-                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
                         ),
                     ],
                   ),
@@ -75,9 +87,9 @@ class SocketService {
             ),
             backgroundColor: AppColors.criticalRed,
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.only(top: 50, left: 16, right: 16),
+            margin: const EdgeInsets.only(top: 40, left: 16, right: 16),
             dismissDirection: DismissDirection.up,
-            duration: const Duration(seconds: 8),
+            duration: const Duration(seconds: 10),
           ),
         );
       }
