@@ -513,27 +513,48 @@ class _GlobalSosIndicatorState extends State<GlobalSosIndicator>
                       ),
                     ],
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        isCanceling ? Icons.cancel : Icons.sos,
-                        color: isCanceling
-                            ? AppColors.criticalRed
-                            : Colors.white,
-                        size: 24,
-                      ),
-                      Text(
-                        isCanceling ? 'STOP' : (count > 0 ? '$count' : 'SOS'),
-                        style: TextStyle(
-                          color: isCanceling
-                              ? AppColors.criticalRed
-                              : Colors.white,
-                          fontSize: isCanceling ? 10 : (count > 0 ? 11 : 10),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
+                  child: Center(
+                    child: isCanceling
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(Icons.cancel, color: AppColors.criticalRed, size: 20),
+                              SizedBox(height: 2),
+                              Text(
+                                'STOP',
+                                style: TextStyle(
+                                  color: AppColors.criticalRed,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.0,
+                                ),
+                              ),
+                            ],
+                          )
+                        : (count > 0)
+                            ? Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.sos_rounded, color: Colors.white, size: 22),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    '$count',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const Icon(
+                                Icons.sos_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
                   ),
                 ),
               ],

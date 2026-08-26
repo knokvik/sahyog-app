@@ -498,20 +498,21 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Baseline(
-                        baseline: 30,
-                        baselineType: TextBaseline.alphabetic,
-                        child: Text(
-                          '*',
-                          style: TextStyle(
-                            color: AppColors.criticalRed,
-                            fontSize: 64,
-                            fontWeight: FontWeight.w900,
-                            height: 0.5,
-                          ),
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppColors.criticalRed.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.emergency_rounded,
+                          color: AppColors.criticalRed,
+                          size: 26,
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 14),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
