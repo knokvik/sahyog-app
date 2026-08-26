@@ -217,6 +217,140 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
     return null;
   }
 
+  void _showSosActionSheet(_ResourceMarker marker) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white24 : Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: marker.type == 'SOS'
+                          ? AppColors.criticalRed.withValues(alpha: 0.12)
+                          : AppColors.primaryGreen.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Icon(
+                        marker.type == 'SOS'
+                            ? Icons.emergency_rounded
+                            : Icons.location_on_rounded,
+                        color: marker.type == 'SOS'
+                            ? AppColors.criticalRed
+                            : AppColors.primaryGreen,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          marker.type == 'SOS'
+                              ? 'EMERGENCY SOS SIGNAL'
+                              : marker.type.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Status: ${marker.status.toUpperCase()} • ${marker.point.latitude.toStringAsFixed(4)}, ${marker.point.longitude.toStringAsFixed(4)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _mapController.move(marker.point, 17);
+                      },
+                      icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
+                      label: const Text('Center Map', style: TextStyle(fontWeight: FontWeight.w500)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        LocationService.openDirections(
+                          marker.point.latitude,
+                          marker.point.longitude,
+                          label: 'SOS Emergency Signal',
+                        );
+                      },
+                      icon: const Icon(Icons.near_me_rounded, size: 18),
+                      label: const Text('Navigate', style: TextStyle(fontWeight: FontWeight.w500)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryGreen,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -333,13 +467,13 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           circles: _zones.map((z) {
                             return CircleMarker(
                               point: z.center,
-                              radius: max(40, z.radiusMeters / 5),
+                              radius: z.radiusMeters.clamp(80.0, 1000.0),
                               useRadiusInMeter: true,
                               color: _severityColor(
                                 z.severity,
-                              ).withValues(alpha: 0.16),
-                              borderColor: _severityColor(z.severity),
-                              borderStrokeWidth: 2,
+                              ).withValues(alpha: 0.12),
+                              borderColor: _severityColor(z.severity).withValues(alpha: 0.7),
+                              borderStrokeWidth: 1.5,
                             );
                           }).toList(),
                         ),
@@ -347,13 +481,13 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           circles: _userMarkedZones.map((z) {
                             return CircleMarker(
                               point: z.center,
-                              radius: z.radiusMeters,
+                              radius: z.radiusMeters.clamp(50.0, 500.0),
                               useRadiusInMeter: true,
                               color: AppColors.primaryGreen.withValues(
-                                alpha: 0.16,
+                                alpha: 0.12,
                               ),
-                              borderColor: AppColors.primaryGreen,
-                              borderStrokeWidth: 2,
+                              borderColor: AppColors.primaryGreen.withValues(alpha: 0.7),
+                              borderStrokeWidth: 1.5,
                             );
                           }).toList(),
                         ),
@@ -362,45 +496,52 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                             final isSos = r.type == 'SOS';
                             return Marker(
                               point: r.point,
-                              width: 120,
-                              height: 60,
+                              width: isSos ? 44 : 100,
+                              height: isSos ? 44 : 50,
                               child: isSos
-                                  ? _SosMarker()
-                                  : Column(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(
-                                              10,
+                                  ? _SosMarker(
+                                      onTap: () => _showSosActionSheet(r),
+                                    )
+                                  : GestureDetector(
+                                      onTap: () => _showSosActionSheet(r),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
                                             ),
-                                            boxShadow: const [
-                                              BoxShadow(
-                                                blurRadius: 6,
-                                                color: Color(0x22000000),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(
+                                                8,
                                               ),
-                                            ],
-                                          ),
-                                          child: Text(
-                                            r.type,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black,
+                                              boxShadow: const [
+                                                BoxShadow(
+                                                  blurRadius: 4,
+                                                  color: Color(0x22000000),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Text(
+                                              r.type,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.black,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        const Icon(
-                                          Icons.location_on,
-                                          color: AppColors.primaryGreen,
-                                          size: 26,
-                                        ),
-                                      ],
+                                          const Icon(
+                                            Icons.location_on,
+                                            color: AppColors.primaryGreen,
+                                            size: 22,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                             );
                           }).toList(),
@@ -800,6 +941,9 @@ class _ResourceMarker {
 }
 
 class _SosMarker extends StatefulWidget {
+  const _SosMarker({this.onTap});
+  final VoidCallback? onTap;
+
   @override
   State<_SosMarker> createState() => _SosMarkerState();
 }
@@ -825,68 +969,63 @@ class _SosMarkerState extends State<_SosMarker>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = _controller.value;
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            // Wave 1
-            Opacity(
-              opacity: (1.0 - t).clamp(0.0, 1.0),
-              child: Container(
-                width: 70 * t,
-                height: 70 * t,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.criticalRed, width: 1.5),
-                ),
-              ),
-            ),
-            // Wave 2
-            Opacity(
-              opacity: (1.0 - ((t + 0.33) % 1.0)).clamp(0.0, 1.0),
-              child: Container(
-                width: 70 * ((t + 0.33) % 1.0),
-                height: 70 * ((t + 0.33) % 1.0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.criticalRed, width: 1.0),
-                ),
-              ),
-            ),
-            // Wave 3
-            Opacity(
-              opacity: (1.0 - ((t + 0.66) % 1.0)).clamp(0.0, 1.0),
-              child: Container(
-                width: 70 * ((t + 0.66) % 1.0),
-                height: 70 * ((t + 0.66) % 1.0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.criticalRed, width: 0.5),
-                ),
-              ),
-            ),
-            // Pulse inner
-            Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.criticalRed,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.criticalRed.withOpacity(0.8),
-                    blurRadius: 8,
-                    spreadRadius: 2,
+    return GestureDetector(
+      onTap: widget.onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final t = _controller.value;
+          return SizedBox(
+            width: 44,
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Pulse ripple
+                Opacity(
+                  opacity: (1.0 - t).clamp(0.0, 1.0),
+                  child: Container(
+                    width: 24 + (20 * t),
+                    height: 24 + (20 * t),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.criticalRed.withValues(alpha: 0.8),
+                        width: 1.5,
+                      ),
+                    ),
                   ),
-                ],
-              ),
+                ),
+                // Standard red pin badge
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: AppColors.criticalRed,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.criticalRed.withValues(alpha: 0.4),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.emergency_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
