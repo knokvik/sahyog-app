@@ -485,21 +485,21 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ── Section 1: Left SOS Icon (No circle background, clean & vertically centered) ──
+                      // ── Section 1: Left SOS Icon (Opens configured SOS page popup from below) ──
                       Expanded(
                         flex: 2,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (widget.onSosTap != null) {
-                              widget.onSosTap!();
-                            } else {
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
                               final alerts = SocketService.instance.liveSosAlerts.value;
                               if (alerts.isNotEmpty) {
                                 SosAlertsPanel.show(
                                   context: context,
                                   alerts: alerts,
-                                  onGoToSosPanels: () {},
+                                  onGoToSosPanels: () {
+                                    if (widget.onSosTap != null) widget.onSosTap!();
+                                  },
                                   onNavigateToLocation: (loc) {
                                     if (widget.onSosLocationTap != null) {
                                       widget.onSosLocationTap!(loc);
@@ -509,39 +509,18 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('No active SOS alerts registered. Hold 5s to trigger SOS.'),
+                                    content: Text('No active SOS alerts registered. Hold center 5s to trigger SOS.'),
                                     duration: Duration(seconds: 2),
                                   ),
                                 );
                               }
-                            }
-                          },
-                          onTapDown: (_) {
-                            if (_sosFired) return;
-                            _sosHoldTicks = 0;
-                            _sosHoldTimer = Timer.periodic(
-                              const Duration(milliseconds: 100),
-                              (timer) {
-                                if (mounted) {
-                                  setState(() {
-                                    _sosHoldTicks++;
-                                    if (_sosHoldTicks >= 50) {
-                                      _sosHoldTimer?.cancel();
-                                      _sosFired = true;
-                                      _triggerSOS();
-                                    }
-                                  });
-                                }
-                              },
-                            );
-                          },
-                          onTapUp: (_) => _cancelHold(),
-                          onTapCancel: () => _cancelHold(),
-                          child: const Center(
-                            child: Icon(
-                              Icons.emergency_rounded,
-                              color: AppColors.criticalRed,
-                              size: 28,
+                            },
+                            child: const Center(
+                              child: Icon(
+                                Icons.emergency_rounded,
+                                color: AppColors.criticalRed,
+                                size: 28,
+                              ),
                             ),
                           ),
                         ),
@@ -650,7 +629,14 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                           color: Colors.transparent,
                           child: InkWell(
                             onTap: () {
-                              NearbySosRadarSheet.show(context);
+                              NearbySosRadarSheet.show(
+                                context,
+                                onNavigateToLocation: (loc) {
+                                  if (widget.onSosLocationTap != null) {
+                                    widget.onSosLocationTap!(loc);
+                                  }
+                                },
+                              );
                             },
                             child: const Center(
                               child: Icon(
