@@ -35,6 +35,7 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   double _currentZoom = 12.0;
 
   bool _isMapReady = false;
+  bool _isLegendExpanded = true;
 
   @override
   void initState() {
@@ -523,53 +524,17 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                       ],
                     ),
                   ),
-                  Positioned(
+                  // ── Collapsible Floating Legend with Integrated Loading Indicator ──
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeInOutCubic,
                     bottom: 24,
-                    left: 16,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    left: _isLegendExpanded ? 16 : -180,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        if (_loading)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryGreen,
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Row(
-                              children: [
-                                SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Loading markers...',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         Container(
+                          width: 180,
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: Theme.of(
@@ -586,15 +551,48 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text(
-                                'ZONES',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
-                                ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        'ZONES',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                      if (_loading) ...[
+                                        const SizedBox(width: 6),
+                                        const SizedBox(
+                                          width: 10,
+                                          height: 10,
+                                          child: CircularProgressIndicator(
+                                            color: AppColors.primaryGreen,
+                                            strokeWidth: 1.8,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  InkWell(
+                                    onTap: () => setState(() => _isLegendExpanded = false),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(2),
+                                      child: Icon(
+                                        Icons.chevron_left_rounded,
+                                        size: 18,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 6),
                               Row(
@@ -603,24 +601,24 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                                     color: AppColors.criticalRed,
                                     label: 'Red',
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 10),
                                   _CompactDot(
                                     color: AppColors.warningAmber,
                                     label: 'Yellow',
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 10),
                                   _CompactDot(
                                     color: AppColors.infoBlue,
                                     label: 'Blue',
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               const Text(
                                 'MARKERS',
                                 style: TextStyle(
                                   fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w600,
                                   color: Colors.grey,
                                   letterSpacing: 0.5,
                                 ),
@@ -632,7 +630,7 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                                     color: AppColors.criticalRed,
                                     label: 'SOS',
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 10),
                                   _CompactDot(
                                     color: AppColors.primaryGreen,
                                     label: 'User',
@@ -644,13 +642,47 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                                 child: Divider(height: 1),
                               ),
                               Text(
-                                'Items & SOS: ${_resources.length}',
+                                _loading
+                                    ? 'Updating signals...'
+                                    : 'Items & SOS: ${_resources.length}',
                                 style: const TextStyle(
                                   fontSize: 11,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // Sticky Toggle Chevron Button on Edge
+                        GestureDetector(
+                          onTap: () => setState(() => _isLegendExpanded = !_isLegendExpanded),
+                          child: Container(
+                            width: 26,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor.withValues(alpha: 0.95),
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(10),
+                                bottomRight: Radius.circular(10),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.12),
+                                  blurRadius: 6,
+                                  offset: const Offset(2, 2),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Icon(
+                                _isLegendExpanded
+                                    ? Icons.chevron_left_rounded
+                                    : Icons.chevron_right_rounded,
+                                color: Colors.grey[700],
+                                size: 18,
+                              ),
+                            ),
                           ),
                         ),
                       ],
