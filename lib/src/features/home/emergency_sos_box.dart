@@ -445,146 +445,219 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
             },
           ),
         ] else ...[
-          GestureDetector(
-            onTap: () {
-              if (widget.onSosTap != null) {
-                widget.onSosTap!();
-              } else {
-                final alerts = SocketService.instance.liveSosAlerts.value;
-                if (alerts.isNotEmpty) {
-                  SosAlertsPanel.show(
-                    context: context,
-                    alerts: alerts,
-                    onGoToSosPanels: () {},
-                    onNavigateToLocation: (loc) {
-                      if (widget.onSosLocationTap != null) {
-                        widget.onSosLocationTap!(loc);
-                      }
-                    },
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('No active SOS alerts registered. Hold 5s to trigger SOS.'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                }
-              }
-            },
-            onTapDown: (_) {
-              if (_sosFired) return;
-              _sosHoldTicks = 0;
-              _sosHoldTimer = Timer.periodic(
-                const Duration(milliseconds: 100),
-                (timer) {
-                  if (mounted) {
-                    setState(() {
-                      _sosHoldTicks++;
-                      if (_sosHoldTicks >= 50) {
-                        _sosHoldTimer?.cancel();
-                        _sosFired = true;
-                        _triggerSOS();
-                      }
-                    });
-                  }
-                },
-              );
-            },
-            onTapUp: (_) => _cancelHold(),
-            onTapCancel: () => _cancelHold(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.criticalRed, width: 2),
-                boxShadow: [
-                  if (_sosHoldTicks > 0)
-                    BoxShadow(
-                      color: AppColors.criticalRed.withOpacity(0.3),
-                      blurRadius: 10,
-                      spreadRadius: progress * 5,
-                    ),
-                ],
-              ),
+          Container(
+            height: 72,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.criticalRed, width: 1.8),
+              boxShadow: [
+                if (_sosHoldTicks > 0)
+                  BoxShadow(
+                    color: AppColors.criticalRed.withValues(alpha: 0.25),
+                    blurRadius: 12,
+                    spreadRadius: progress * 4,
+                  )
+                else
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
               child: Stack(
-                alignment: Alignment.center,
                 children: [
+                  // Hold Progress Fill
                   if (!_sosFired && _sosHoldTicks > 0)
                     Positioned.fill(
                       child: FractionallySizedBox(
                         alignment: Alignment.centerLeft,
                         widthFactor: progress,
                         child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.criticalRed.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                          color: AppColors.criticalRed.withValues(alpha: 0.15),
                         ),
                       ),
                     ),
-                  Row(
-                    children: [
-                      // Left: Vertically centered SOS icon without background circle
-                      const Icon(
-                        Icons.emergency_rounded,
-                        color: AppColors.criticalRed,
-                        size: 30,
-                      ),
-                      const SizedBox(width: 8),
 
-                      // Center: HOLD FOR SOS text & countdown
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ── Section 1: Left SOS Icon (No circle background, clean & vertically centered) ──
                       Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const Text(
-                              'HOLD FOR SOS',
-                              style: TextStyle(
-                                color: AppColors.criticalRed,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 18,
-                                letterSpacing: 2,
-                              ),
+                        flex: 2,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (widget.onSosTap != null) {
+                              widget.onSosTap!();
+                            } else {
+                              final alerts = SocketService.instance.liveSosAlerts.value;
+                              if (alerts.isNotEmpty) {
+                                SosAlertsPanel.show(
+                                  context: context,
+                                  alerts: alerts,
+                                  onGoToSosPanels: () {},
+                                  onNavigateToLocation: (loc) {
+                                    if (widget.onSosLocationTap != null) {
+                                      widget.onSosLocationTap!(loc);
+                                    }
+                                  },
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('No active SOS alerts registered. Hold 5s to trigger SOS.'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          onTapDown: (_) {
+                            if (_sosFired) return;
+                            _sosHoldTicks = 0;
+                            _sosHoldTimer = Timer.periodic(
+                              const Duration(milliseconds: 100),
+                              (timer) {
+                                if (mounted) {
+                                  setState(() {
+                                    _sosHoldTicks++;
+                                    if (_sosHoldTicks >= 50) {
+                                      _sosHoldTimer?.cancel();
+                                      _sosFired = true;
+                                      _triggerSOS();
+                                    }
+                                  });
+                                }
+                              },
+                            );
+                          },
+                          onTapUp: (_) => _cancelHold(),
+                          onTapCancel: () => _cancelHold(),
+                          child: const Center(
+                            child: Icon(
+                              Icons.emergency_rounded,
+                              color: AppColors.criticalRed,
+                              size: 28,
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              (_sosHoldTicks > 0)
-                                  ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
-                                  : 'Hold for 5s to request immediate help',
-                              style: TextStyle(
-                                color: Colors.black54,
-                                fontSize: 11,
-                                fontWeight: _sosHoldTicks > 0
-                                    ? FontWeight.bold
-                                    : FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
 
-                      // Right: Hotspot / Radar Scanner icon button
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                      // Vertical Divider 1
+                      Container(
+                        width: 1.5,
+                        color: AppColors.criticalRed.withValues(alpha: 0.3),
+                      ),
+
+                      // ── Section 2: Center HOLD FOR SOS ──
+                      Expanded(
+                        flex: 6,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: () {
-                            NearbySosRadarSheet.show(context);
+                            if (widget.onSosTap != null) {
+                              widget.onSosTap!();
+                            } else {
+                              final alerts = SocketService.instance.liveSosAlerts.value;
+                              if (alerts.isNotEmpty) {
+                                SosAlertsPanel.show(
+                                  context: context,
+                                  alerts: alerts,
+                                  onGoToSosPanels: () {},
+                                  onNavigateToLocation: (loc) {
+                                    if (widget.onSosLocationTap != null) {
+                                      widget.onSosLocationTap!(loc);
+                                    }
+                                  },
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('No active SOS alerts registered. Hold 5s to trigger SOS.'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            }
                           },
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.criticalRed.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(10),
+                          onTapDown: (_) {
+                            if (_sosFired) return;
+                            _sosHoldTicks = 0;
+                            _sosHoldTimer = Timer.periodic(
+                              const Duration(milliseconds: 100),
+                              (timer) {
+                                if (mounted) {
+                                  setState(() {
+                                    _sosHoldTicks++;
+                                    if (_sosHoldTicks >= 50) {
+                                      _sosHoldTimer?.cancel();
+                                      _sosFired = true;
+                                      _triggerSOS();
+                                    }
+                                  });
+                                }
+                              },
+                            );
+                          },
+                          onTapUp: (_) => _cancelHold(),
+                          onTapCancel: () => _cancelHold(),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text(
+                                  'HOLD FOR SOS',
+                                  style: TextStyle(
+                                    color: AppColors.criticalRed,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 17,
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  (_sosHoldTicks > 0)
+                                      ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
+                                      : 'Hold 5s to request help',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 11,
+                                    fontWeight: _sosHoldTicks > 0
+                                        ? FontWeight.bold
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: const Icon(
-                              Icons.radar_rounded,
-                              color: AppColors.criticalRed,
-                              size: 24,
+                          ),
+                        ),
+                      ),
+
+                      // Vertical Divider 2
+                      Container(
+                        width: 1.5,
+                        color: AppColors.criticalRed.withValues(alpha: 0.3),
+                      ),
+
+                      // ── Section 3: Right Hotspot / Radar Scan ──
+                      Expanded(
+                        flex: 2,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              NearbySosRadarSheet.show(context);
+                            },
+                            child: const Center(
+                              child: Icon(
+                                Icons.radar_rounded,
+                                color: AppColors.criticalRed,
+                                size: 26,
+                              ),
                             ),
                           ),
                         ),

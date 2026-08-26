@@ -40,15 +40,17 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF0F172A),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black54,
+            color: Colors.black.withValues(alpha: 0.15),
             blurRadius: 30,
-            spreadRadius: 10,
+            spreadRadius: 4,
           ),
         ],
       ),
@@ -62,7 +64,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: isDark ? Colors.white24 : Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -78,7 +80,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppColors.criticalRed.withValues(alpha: 0.15),
+                      color: AppColors.criticalRed.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -88,13 +90,13 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'SOS MESH RADAR',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.2,
@@ -103,7 +105,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                       Text(
                         'Scanning Nearby BLE & Offline Signals',
                         style: TextStyle(
-                          color: Colors.white54,
+                          color: isDark ? Colors.white54 : Colors.grey[600],
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
@@ -114,15 +116,19 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
               ),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close, color: Colors.white60, size: 20),
+                icon: Icon(
+                  Icons.close,
+                  color: isDark ? Colors.white60 : Colors.grey[700],
+                  size: 20,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // ── Cool Radar Animation with Central Glowing Ball ──
+          // ── Cool Radar Animation with Central Glowing Ball (Clean White/Adaptive Theme) ──
           SizedBox(
-            height: 210,
+            height: 200,
             width: double.infinity,
             child: Stack(
               alignment: Alignment.center,
@@ -132,8 +138,11 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                   animation: _controller,
                   builder: (context, child) {
                     return CustomPaint(
-                      size: const Size(210, 210),
-                      painter: _RadarWavePainter(progress: _controller.value),
+                      size: const Size(200, 200),
+                      painter: _RadarWavePainter(
+                        progress: _controller.value,
+                        isDark: isDark,
+                      ),
                     );
                   },
                 ),
@@ -145,8 +154,8 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                     return Transform.rotate(
                       angle: _controller.value * 2 * math.pi,
                       child: Container(
-                        width: 180,
-                        height: 180,
+                        width: 170,
+                        height: 170,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: SweepGradient(
@@ -154,7 +163,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                             colors: [
                               Colors.transparent,
                               AppColors.criticalRed.withValues(alpha: 0.0),
-                              AppColors.criticalRed.withValues(alpha: 0.25),
+                              AppColors.criticalRed.withValues(alpha: 0.2),
                             ],
                             stops: const [0.0, 0.7, 1.0],
                           ),
@@ -166,22 +175,22 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
 
                 // Center Glowing Ball / Beacon Orb
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: 46,
+                  height: 46,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: const RadialGradient(
                       colors: [
                         Color(0xFFFF4D4D),
                         Color(0xFFDC2626),
-                        Color(0xFF7F1D1D),
+                        Color(0xFF991B1B),
                       ],
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFFEF4444).withValues(alpha: 0.6),
-                        blurRadius: 20,
-                        spreadRadius: 4,
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.45),
+                        blurRadius: 18,
+                        spreadRadius: 3,
                       ),
                     ],
                   ),
@@ -189,7 +198,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                     child: Icon(
                       Icons.sensors_rounded,
                       color: Colors.white,
-                      size: 24,
+                      size: 22,
                     ),
                   ),
                 ),
@@ -209,9 +218,11 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
+                      color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey[100],
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(
+                        color: isDark ? Colors.white12 : Colors.grey[300]!,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -233,8 +244,8 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                               : 'GRID CLEAR • LISTENING FOR BLE BEACONS',
                           style: TextStyle(
                             color: activeList.isNotEmpty
-                                ? const Color(0xFFFCA5A5)
-                                : const Color(0xFF6EE7B7),
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFF059669),
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.8,
@@ -263,10 +274,12 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                           return Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1E293B),
+                              color: isDark ? const Color(0xFF1E293B) : Colors.grey[50],
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                                color: isDark
+                                    ? const Color(0xFFEF4444).withValues(alpha: 0.35)
+                                    : const Color(0xFFEF4444).withValues(alpha: 0.25),
                               ),
                             ),
                             child: Row(
@@ -274,7 +287,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
@@ -290,8 +303,8 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                                     children: [
                                       Text(
                                         type.toUpperCase(),
-                                        style: const TextStyle(
-                                          color: Colors.white,
+                                        style: TextStyle(
+                                          color: isDark ? Colors.white : const Color(0xFF0F172A),
                                           fontSize: 13,
                                           fontWeight: FontWeight.w800,
                                         ),
@@ -299,8 +312,8 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                                       const SizedBox(height: 2),
                                       Text(
                                         'Reporter: $reporter',
-                                        style: const TextStyle(
-                                          color: Colors.white60,
+                                        style: TextStyle(
+                                          color: isDark ? Colors.white60 : Colors.grey[600],
                                           fontSize: 11,
                                         ),
                                       ),
@@ -311,14 +324,14 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: isMesh
-                                        ? const Color(0xFF3B82F6).withValues(alpha: 0.2)
-                                        : const Color(0xFF10B981).withValues(alpha: 0.2),
+                                        ? const Color(0xFF3B82F6).withValues(alpha: 0.12)
+                                        : const Color(0xFF10B981).withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
                                     isMesh ? 'BLE MESH' : 'ONLINE',
                                     style: TextStyle(
-                                      color: isMesh ? const Color(0xFF93C5FD) : const Color(0xFF6EE7B7),
+                                      color: isMesh ? const Color(0xFF2563EB) : const Color(0xFF059669),
                                       fontSize: 9,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -337,7 +350,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                         'Continuous background mesh listener active.\nDistress pings broadcast on Bluetooth LE and WiFi Direct.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
+                          color: isDark ? Colors.white38 : Colors.grey[500],
                           fontSize: 11,
                           height: 1.4,
                         ),
@@ -355,8 +368,9 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
 
 class _RadarWavePainter extends CustomPainter {
   final double progress;
+  final bool isDark;
 
-  _RadarWavePainter({required this.progress});
+  _RadarWavePainter({required this.progress, required this.isDark});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -370,7 +384,7 @@ class _RadarWavePainter extends CustomPainter {
       final opacity = (1.0 - ringProgress).clamp(0.0, 1.0);
 
       final paint = Paint()
-        ..color = const Color(0xFFEF4444).withValues(alpha: opacity * 0.45)
+        ..color = const Color(0xFFEF4444).withValues(alpha: opacity * 0.4)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5;
 
@@ -379,7 +393,9 @@ class _RadarWavePainter extends CustomPainter {
 
     // Static concentric grid circles
     final gridPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.08)
+      ..color = isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.grey.withValues(alpha: 0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
@@ -389,7 +405,9 @@ class _RadarWavePainter extends CustomPainter {
 
     // Crosshairs
     final crosshairPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.08)
+      ..color = isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.grey.withValues(alpha: 0.2)
       ..strokeWidth = 1;
 
     canvas.drawLine(Offset(center.dx - maxRadius, center.dy), Offset(center.dx + maxRadius, center.dy), crosshairPaint);
@@ -398,5 +416,5 @@ class _RadarWavePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RadarWavePainter oldDelegate) =>
-      oldDelegate.progress != progress;
+      oldDelegate.progress != progress || oldDelegate.isDark != isDark;
 }
