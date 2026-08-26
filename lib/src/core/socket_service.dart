@@ -1,6 +1,7 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/material.dart';
 import '../app.dart';
+import '../features/home/sos_alerts_panel.dart';
 import '../theme/app_colors.dart';
 import 'app_config.dart';
 
@@ -56,45 +57,7 @@ class SocketService {
       debugPrint('[Socket] Received new_sos_alert: $raw');
       final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
 
-      // 1. Show global snackbar pop-up across the entire app
-      final messenger = SahyogApp.scaffoldMessengerKey.currentState;
-      if (messenger != null) {
-        messenger.clearSnackBars();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'EMERGENCY SOS: ${data['type'] ?? 'Help Needed'}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                      if (data['reporter_name'] != null)
-                        Text(
-                          'From: ${data['reporter_name']}',
-                          style: const TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: AppColors.criticalRed,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.only(top: 40, left: 16, right: 16),
-            dismissDirection: DismissDirection.up,
-            duration: const Duration(seconds: 10),
-          ),
-        );
-      }
-
-      // 2. Update reactive notifiers
+      // 1. Update reactive notifiers
       onNewSosAlert.value = data;
 
       final id = data['id']?.toString() ??
@@ -105,6 +68,56 @@ class SocketService {
       );
       alerts[id] = data;
       liveSosAlerts.value = alerts;
+
+      // 2. Open configured SOS alerts bottom sheet popup from below
+      final navContext = SahyogApp.navigatorKey.currentContext;
+      if (navContext != null && navContext.mounted) {
+        SosAlertsPanel.show(
+          context: navContext,
+          alerts: alerts,
+          onGoToSosPanels: () {
+            Navigator.of(navContext, rootNavigator: true).maybePop();
+          },
+        );
+      } else {
+        // Fallback to top-level floating snackbar
+        final messenger = SahyogApp.scaffoldMessengerKey.currentState;
+        if (messenger != null) {
+          messenger.clearSnackBars();
+          messenger.showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'EMERGENCY SOS: ${data['type'] ?? 'Help Needed'}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        if (data['reporter_name'] != null)
+                          Text(
+                            'From: ${data['reporter_name']}',
+                            style: const TextStyle(fontSize: 12, color: Colors.white70),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.criticalRed,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.only(top: 40, left: 16, right: 16),
+              dismissDirection: DismissDirection.up,
+              duration: const Duration(seconds: 10),
+            ),
+          );
+        }
+      }
     });
 
     _socket!.on('sos_resolved', (raw) {

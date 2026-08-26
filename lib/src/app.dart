@@ -15,6 +15,8 @@ class SahyogApp extends StatelessWidget {
 
   static final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -25,6 +27,7 @@ class SahyogApp extends StatelessWidget {
       ),
       child: MaterialApp(
         title: 'Sahyog',
+        navigatorKey: navigatorKey,
         scaffoldMessengerKey: scaffoldMessengerKey,
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.light,
