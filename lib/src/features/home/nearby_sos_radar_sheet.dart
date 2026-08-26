@@ -23,22 +23,22 @@ class NearbySosRadarSheet extends StatefulWidget {
 }
 
 class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  late final AnimationController _waveController;
   bool _isScanning = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _waveController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2, milliseconds: 500),
+      duration: const Duration(seconds: 3),
     );
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _waveController.dispose();
     super.dispose();
   }
 
@@ -46,10 +46,10 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
     setState(() {
       _isScanning = !_isScanning;
       if (_isScanning) {
-        _controller.repeat();
+        _waveController.repeat();
       } else {
-        _controller.stop();
-        _controller.reset();
+        _waveController.stop();
+        _waveController.reset();
       }
     });
   }
@@ -64,20 +64,22 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
         final activeList = alerts.values.toList();
         final bool hasDetected = activeList.isNotEmpty;
 
-        // Active theme color: Green if idle/clear, Red if distress detected
+        // Smooth color transition
         final Color activeColor = (!_isScanning || !hasDetected)
             ? const Color(0xFF10B981) // Emerald Green
             : const Color(0xFFEF4444); // Critical Red
 
-        return Container(
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF0F172A) : Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 30,
-                spreadRadius: 4,
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 24,
+                spreadRadius: 2,
               ),
             ],
           ),
@@ -98,7 +100,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
               ),
               const SizedBox(height: 16),
 
-              // Header: Title centered without red logo on top
+              // Header: Centered title without harsh top logo
               Stack(
                 alignment: Alignment.center,
                 children: [
@@ -115,16 +117,20 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                           ),
                         ),
                         const SizedBox(height: 3),
-                        Text(
-                          _isScanning
-                              ? (hasDetected
-                                  ? '🚨 Distress beacons detected nearby!'
-                                  : 'Scanning BLE Mesh & P2P channels...')
-                              : 'Tap the center circle to start scanning',
-                          style: TextStyle(
-                            color: isDark ? Colors.white54 : Colors.grey[600],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: Text(
+                            _isScanning
+                                ? (hasDetected
+                                    ? '🚨 Distress beacons detected nearby!'
+                                    : 'Scanning BLE Mesh & P2P channels...')
+                                : 'Tap the center button to start scanning',
+                            key: ValueKey('$_isScanning-$hasDetected'),
+                            style: TextStyle(
+                              color: isDark ? Colors.white54 : Colors.grey[600],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ],
@@ -145,36 +151,44 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
               ),
               const SizedBox(height: 24),
 
-              // ── Interactive Radar Display ──
+              // ── Interactive Smooth Radar Display ──
               SizedBox(
                 height: 200,
                 width: double.infinity,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Concentric Expanding Radar Waves (When scanning)
-                    AnimatedBuilder(
-                      animation: _controller,
-                      builder: (context, child) {
-                        return CustomPaint(
-                          size: const Size(200, 200),
-                          painter: _RadarWavePainter(
-                            progress: _isScanning ? _controller.value : 0.0,
-                            color: activeColor,
-                            isDark: isDark,
-                            isScanning: _isScanning,
-                          ),
-                        );
-                      },
+                    // Concentric Expanding Radar Waves with Smooth Fade
+                    AnimatedOpacity(
+                      opacity: _isScanning ? 1.0 : 0.2,
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeInOut,
+                      child: AnimatedBuilder(
+                        animation: _waveController,
+                        builder: (context, child) {
+                          return CustomPaint(
+                            size: const Size(200, 200),
+                            painter: _RadarWavePainter(
+                              progress: _isScanning ? _waveController.value : 0.0,
+                              color: activeColor,
+                              isDark: isDark,
+                              isScanning: _isScanning,
+                            ),
+                          );
+                        },
+                      ),
                     ),
 
-                    // Rotating Scanning Beam (Only when scanning)
-                    if (_isScanning)
-                      AnimatedBuilder(
-                        animation: _controller,
+                    // Rotating Scanning Beam (Smoothly Faded)
+                    AnimatedOpacity(
+                      opacity: _isScanning ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeInOut,
+                      child: AnimatedBuilder(
+                        animation: _waveController,
                         builder: (context, child) {
                           return Transform.rotate(
-                            angle: _controller.value * 2 * math.pi,
+                            angle: _waveController.value * 2 * math.pi,
                             child: Container(
                               width: 170,
                               height: 170,
@@ -185,7 +199,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                                   colors: [
                                     Colors.transparent,
                                     activeColor.withValues(alpha: 0.0),
-                                    activeColor.withValues(alpha: 0.22),
+                                    activeColor.withValues(alpha: 0.18),
                                   ],
                                   stops: const [0.0, 0.7, 1.0],
                                 ),
@@ -194,41 +208,53 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                           );
                         },
                       ),
+                    ),
 
-                    // ── Central Interactive Orb / Circle Button ──
+                    // ── Central Interactive Orb with Soft, Smooth Glow (No Harsh Shadow) ──
                     GestureDetector(
                       onTap: _toggleScan,
-                      child: Container(
-                        width: 58,
-                        height: 58,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: (!_isScanning || !hasDetected)
-                                ? const [
-                                    Color(0xFF34D399),
-                                    Color(0xFF10B981),
-                                    Color(0xFF065F46),
-                                  ]
-                                : const [
-                                    Color(0xFFFF4D4D),
-                                    Color(0xFFDC2626),
-                                    Color(0xFF991B1B),
-                                  ],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: activeColor.withValues(alpha: _isScanning ? 0.5 : 0.3),
-                              blurRadius: _isScanning ? 24 : 12,
-                              spreadRadius: _isScanning ? 4 : 1,
+                      child: AnimatedScale(
+                        scale: _isScanning ? 1.06 : 1.0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutBack,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeInOut,
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: (!_isScanning || !hasDetected)
+                                  ? const [
+                                      Color(0xFF6EE7B7),
+                                      Color(0xFF10B981),
+                                      Color(0xFF059669),
+                                    ]
+                                  : const [
+                                      Color(0xFFFCA5A5),
+                                      Color(0xFFEF4444),
+                                      Color(0xFFB91C1C),
+                                    ],
                             ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Icon(
-                            _isScanning ? Icons.sensors_rounded : Icons.power_settings_new_rounded,
-                            color: Colors.white,
-                            size: 28,
+                            boxShadow: [
+                              BoxShadow(
+                                color: activeColor.withValues(alpha: _isScanning ? 0.35 : 0.18),
+                                blurRadius: _isScanning ? 18 : 8,
+                                spreadRadius: _isScanning ? 2 : 0,
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 250),
+                              child: Icon(
+                                _isScanning ? Icons.sensors_rounded : Icons.power_settings_new_rounded,
+                                key: ValueKey(_isScanning),
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -238,8 +264,9 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
               ),
               const SizedBox(height: 16),
 
-              // Status Pill
-              Container(
+              // Status Pill with Smooth Animation
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 350),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey[100],
@@ -251,7 +278,8 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
@@ -262,7 +290,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
                     const SizedBox(width: 8),
                     Text(
                       !_isScanning
-                          ? 'RADAR STANDBY • TAP CENTER ORB TO SCAN'
+                          ? 'RADAR STANDBY • TAP CENTER TO SCAN'
                           : (hasDetected
                               ? '${activeList.length} ACTIVE DISTRESS SIGNAL${activeList.length > 1 ? 'S' : ''} DETECTED'
                               : 'GRID CLEAR • SCANNING BLE BEACONS'),
@@ -447,7 +475,7 @@ class _RadarWavePainter extends CustomPainter {
         final opacity = (1.0 - ringProgress).clamp(0.0, 1.0);
 
         final paint = Paint()
-          ..color = color.withValues(alpha: opacity * 0.35)
+          ..color = color.withValues(alpha: opacity * 0.3)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5;
 
@@ -459,7 +487,7 @@ class _RadarWavePainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = isDark
           ? Colors.white.withValues(alpha: 0.08)
-          : Colors.grey.withValues(alpha: 0.2)
+          : Colors.grey.withValues(alpha: 0.15)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
@@ -471,7 +499,7 @@ class _RadarWavePainter extends CustomPainter {
     final crosshairPaint = Paint()
       ..color = isDark
           ? Colors.white.withValues(alpha: 0.08)
-          : Colors.grey.withValues(alpha: 0.2)
+          : Colors.grey.withValues(alpha: 0.15)
       ..strokeWidth = 1;
 
     canvas.drawLine(Offset(center.dx - maxRadius, center.dy), Offset(center.dx + maxRadius, center.dy), crosshairPaint);

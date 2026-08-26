@@ -446,28 +446,28 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
           ),
         ] else ...[
           Container(
-            height: 72,
+            height: 88,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.criticalRed, width: 1.8),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.criticalRed, width: 2.0),
               boxShadow: [
                 if (_sosHoldTicks > 0)
                   BoxShadow(
                     color: AppColors.criticalRed.withValues(alpha: 0.25),
-                    blurRadius: 12,
-                    spreadRadius: progress * 4,
+                    blurRadius: 14,
+                    spreadRadius: progress * 5,
                   )
                 else
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 6,
+                    blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               child: Stack(
                 children: [
                   // Hold Progress Fill
@@ -519,7 +519,7 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                               child: Icon(
                                 Icons.emergency_rounded,
                                 color: AppColors.criticalRed,
-                                size: 28,
+                                size: 32,
                               ),
                             ),
                           ),
@@ -593,18 +593,18 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                                   style: TextStyle(
                                     color: AppColors.criticalRed,
                                     fontWeight: FontWeight.w900,
-                                    fontSize: 17,
-                                    letterSpacing: 1.5,
+                                    fontSize: 19,
+                                    letterSpacing: 1.6,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 3),
                                 Text(
                                   (_sosHoldTicks > 0)
                                       ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
                                       : 'Hold 5s to request help',
                                   style: TextStyle(
                                     color: Colors.black54,
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     fontWeight: _sosHoldTicks > 0
                                         ? FontWeight.bold
                                         : FontWeight.w500,
@@ -642,7 +642,7 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                               child: Icon(
                                 Icons.radar_rounded,
                                 color: AppColors.criticalRed,
-                                size: 26,
+                                size: 28,
                               ),
                             ),
                           ),
