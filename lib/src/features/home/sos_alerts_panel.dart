@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import '../../theme/app_colors.dart';
 
 class SosAlertsPanel {
@@ -8,6 +9,7 @@ class SosAlertsPanel {
     String? activeLocalUuid,
     VoidCallback? onCancelSos,
     required VoidCallback onGoToSosPanels,
+    Function(LatLng location)? onNavigateToLocation,
   }) {
     if (alerts.isEmpty) return;
 
@@ -44,7 +46,7 @@ class SosAlertsPanel {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppColors.criticalRed.withOpacity(0.1),
+                    color: AppColors.criticalRed.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -59,7 +61,7 @@ class SosAlertsPanel {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${alerts.length} Active SOS Alerts',
+                        '${alerts.length} Active SOS Alert${alerts.length > 1 ? 's' : ''}',
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
@@ -67,7 +69,7 @@ class SosAlertsPanel {
                         ),
                       ),
                       const Text(
-                        'Immediate assistance required',
+                        'Tap an alert to locate and navigate on map',
                         style: TextStyle(
                           color: AppColors.criticalRed,
                           fontSize: 12,
@@ -95,62 +97,98 @@ class SosAlertsPanel {
                         ? DateTime.tryParse(timeStr) ?? DateTime.now()
                         : DateTime.now();
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.grey[900]
-                            : Colors.grey[50],
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).dividerColor.withOpacity(0.1),
+                    final double? lat = alert['lat'] != null
+                        ? double.tryParse(alert['lat'].toString())
+                        : (alert['location'] is Map && alert['location']['coordinates'] is List
+                            ? double.tryParse(alert['location']['coordinates'][1].toString())
+                            : null);
+                    final double? lng = alert['lng'] != null
+                        ? double.tryParse(alert['lng'].toString())
+                        : (alert['location'] is Map && alert['location']['coordinates'] is List
+                            ? double.tryParse(alert['location']['coordinates'][0].toString())
+                            : null);
+
+                    return InkWell(
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (lat != null && lng != null && onNavigateToLocation != null) {
+                          onNavigateToLocation(LatLng(lat, lng));
+                        } else {
+                          onGoToSosPanels();
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.grey[900]
+                              : Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha: 0.1),
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: AppColors.criticalRed,
-                            radius: 18,
-                            child: Icon(
-                              Icons.sos,
-                              color: Colors.white,
-                              size: 18,
+                        child: Row(
+                          children: [
+                            const CircleAvatar(
+                              backgroundColor: AppColors.criticalRed,
+                              radius: 18,
+                              child: Icon(
+                                Icons.sos,
+                                color: Colors.white,
+                                size: 18,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  type,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 15,
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    type,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  'Reported by $reporter',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 13,
+                                  Text(
+                                    'Reported by $reporter',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 13,
+                                    ),
                                   ),
+                                ],
+                              ),
+                            ),
+                            if (lat != null && lng != null)
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryGreen.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            '${DateTime.now().difference(time).inMinutes}m ago',
-                            style: const TextStyle(
-                              color: AppColors.criticalRed,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                                child: const Icon(
+                                  Icons.near_me_rounded,
+                                  color: AppColors.primaryGreen,
+                                  size: 18,
+                                ),
+                              )
+                            else
+                              Text(
+                                '${DateTime.now().difference(time).inMinutes}m ago',
+                                style: const TextStyle(
+                                  color: AppColors.criticalRed,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     );
                   }).toList(),

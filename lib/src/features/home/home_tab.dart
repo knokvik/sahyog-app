@@ -218,6 +218,8 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
                                 onCancelSos: null,
                                 onGoToSosPanels: () =>
                                     widget.onNavigate?.call(3),
+                                onNavigateToLocation: (loc) =>
+                                    widget.onNavigate?.call(1, target: loc),
                               );
                             }
                           });

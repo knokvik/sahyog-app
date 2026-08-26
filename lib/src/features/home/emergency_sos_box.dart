@@ -6,11 +6,13 @@ import '../../core/location_service.dart';
 import '../../core/models.dart';
 import '../../core/sos_state_machine.dart';
 import '../../core/sos_sync_engine.dart';
+import '../../core/socket_service.dart';
 import '../../theme/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'nearby_sos_radar_sheet.dart';
+import 'sos_alerts_panel.dart';
 
 class EmergencySosBox extends StatefulWidget {
   const EmergencySosBox({
@@ -444,6 +446,32 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
           ),
         ] else ...[
           GestureDetector(
+            onTap: () {
+              if (widget.onSosTap != null) {
+                widget.onSosTap!();
+              } else {
+                final alerts = SocketService.instance.liveSosAlerts.value;
+                if (alerts.isNotEmpty) {
+                  SosAlertsPanel.show(
+                    context: context,
+                    alerts: alerts,
+                    onGoToSosPanels: () {},
+                    onNavigateToLocation: (loc) {
+                      if (widget.onSosLocationTap != null) {
+                        widget.onSosLocationTap!(loc);
+                      }
+                    },
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('No active SOS alerts registered. Hold 5s to trigger SOS.'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              }
+            },
             onTapDown: (_) {
               if (_sosFired) return;
               _sosHoldTicks = 0;

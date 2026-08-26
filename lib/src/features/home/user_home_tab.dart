@@ -202,6 +202,9 @@ class _UserHomeTabState extends State<UserHomeTab>
                               activeLocalUuid: active?.uuid,
                               onCancelSos: null,
                               onGoToSosPanels: () => widget.onNavigate?.call(1),
+                              onNavigateToLocation: (loc) {
+                                widget.onNavigate?.call(1, target: loc);
+                              },
                             );
                           }
                         });
