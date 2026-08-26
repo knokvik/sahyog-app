@@ -10,6 +10,7 @@ import '../../theme/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'nearby_sos_radar_sheet.dart';
 
 class EmergencySosBox extends StatefulWidget {
   const EmergencySosBox({
@@ -496,49 +497,69 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                       ),
                     ),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppColors.criticalRed.withValues(alpha: 0.12),
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.emergency_rounded,
-                          color: AppColors.criticalRed,
-                          size: 26,
+                      // Left: Vertically centered SOS icon without background circle
+                      const Icon(
+                        Icons.emergency_rounded,
+                        color: AppColors.criticalRed,
+                        size: 30,
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Center: HOLD FOR SOS text & countdown
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Text(
+                              'HOLD FOR SOS',
+                              style: TextStyle(
+                                color: AppColors.criticalRed,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 18,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              (_sosHoldTicks > 0)
+                                  ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
+                                  : 'Hold for 5s to request immediate help',
+                              style: TextStyle(
+                                color: Colors.black54,
+                                fontSize: 11,
+                                fontWeight: _sosHoldTicks > 0
+                                    ? FontWeight.bold
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 14),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'HOLD FOR SOS',
-                            style: TextStyle(
+                      const SizedBox(width: 8),
+
+                      // Right: Hotspot / Radar Scanner icon button
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            NearbySosRadarSheet.show(context);
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.criticalRed.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.radar_rounded,
                               color: AppColors.criticalRed,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20,
-                              letterSpacing: 2,
+                              size: 24,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            (_sosHoldTicks > 0)
-                                ? 'Holding... ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
-                                : 'Hold for 5 seconds to request help',
-                            style: TextStyle(
-                              color: Colors.black54,
-                              fontSize: 12,
-                              fontWeight: _sosHoldTicks > 0
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ],
                   ),

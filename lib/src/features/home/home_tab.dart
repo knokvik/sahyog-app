@@ -175,9 +175,28 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
                   onTap: () {
                     widget.onNavigate?.call(1);
                   },
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: SizedBox(height: 200, child: _buildMiniMap()),
+                  child: Container(
+                    height: 208,
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        width: 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: _buildMiniMap(),
+                    ),
                   ),
                 ),
                 _buildStatsRow(),

@@ -148,6 +148,7 @@ class _UserHomeTabState extends State<UserHomeTab>
   // Build Methods
   // ─────────────────────────────────────────────────────────
 
+  @override
   Widget build(BuildContext context) {
     super.build(context);
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -161,13 +162,28 @@ class _UserHomeTabState extends State<UserHomeTab>
             children: [
               _UserStatusBanner(user: widget.user),
               const SizedBox(height: 16),
-              Card(
-                clipBehavior: Clip.antiAlias,
-                elevation: 2,
-                shape: RoundedRectangleBorder(
+              Container(
+                height: 228,
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    width: 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: SizedBox(height: 220, child: _buildMiniMap()),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: _buildMiniMap(),
+                ),
               ),
               const SizedBox(height: 16),
               EmergencySosBox(
