@@ -45,6 +45,7 @@ class _AuthGateState extends State<AuthGate> {
   void initState() {
     super.initState();
     _api = ApiClient(baseUrl: AppConfig.baseUrl, tokenProvider: _tokenProvider);
+    SocketService.instance.initialize();
     _bootstrap();
   }
 

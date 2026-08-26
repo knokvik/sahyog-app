@@ -1,5 +1,6 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/material.dart';
+import '../app.dart';
 import '../theme/app_colors.dart';
 import 'app_config.dart';
 
@@ -22,84 +23,97 @@ class SocketService {
   final ValueNotifier<Map<String, Map<String, dynamic>>> liveSosAlerts =
       ValueNotifier({});
 
-  void initialize(BuildContext context, bool isCoordinatorOrAdmin) {
+  void initialize([BuildContext? context, bool isCoordinatorOrAdmin = true]) {
     if (_socket != null) return;
 
     // Connect to the Node Express server url
     _socket = IO.io(AppConfig.baseUrl, <String, dynamic>{
-      'transports': ['websocket'],
+      'transports': ['websocket', 'polling'],
       'autoConnect': true,
       'path': '/socket.io/', // Explicit path for reliability
     });
 
     _socket!.onConnectError((data) {
-      print('Socket Connection Error: $data');
+      debugPrint('[Socket] Connection Error: $data');
     });
 
     _socket!.onConnect((_) {
-      print('Connected to Real-Time SOS Socket at ${AppConfig.baseUrl}');
+      debugPrint('[Socket] Connected to Real-Time SOS Socket at ${AppConfig.baseUrl}');
     });
 
-    _socket!.on('new_sos_alert', (data) {
-      if (context.mounted) {
-        // Show a highly visible red toast for ALL users
-        ScaffoldMessenger.of(context).showSnackBar(
+    _socket!.on('new_sos_alert', (raw) {
+      debugPrint('[Socket] Received new_sos_alert: $raw');
+      final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+
+      // 1. Show global snackbar pop-up across the entire app
+      final messenger = SahyogApp.scaffoldMessengerKey.currentState;
+      if (messenger != null) {
+        messenger.showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    'EMERGENCY SOS: ${data['type'] ?? 'Help Needed'} from ${data['reporter_name'] ?? 'Unknown'}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'EMERGENCY SOS: ${data['type'] ?? 'Help Needed'}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      if (data['reporter_name'] != null)
+                        Text(
+                          'From: ${data['reporter_name']}',
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                    ],
                   ),
                 ),
               ],
             ),
             backgroundColor: AppColors.criticalRed,
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.only(top: 60, left: 16, right: 16),
+            margin: const EdgeInsets.only(top: 50, left: 16, right: 16),
             dismissDirection: DismissDirection.up,
-            duration: const Duration(seconds: 10),
+            duration: const Duration(seconds: 8),
           ),
         );
-
-        // Trigger a reload for any listening active boards & map
-        if (data is Map<String, dynamic>) {
-          onNewSosAlert.value = data;
-
-          final alerts = Map<String, Map<String, dynamic>>.from(
-            liveSosAlerts.value,
-          );
-          final id = data['id']?.toString();
-          if (id != null) {
-            alerts[id] = data;
-            liveSosAlerts.value = alerts;
-          }
-        }
       }
+
+      // 2. Update reactive notifiers
+      onNewSosAlert.value = data;
+
+      final id = data['id']?.toString() ??
+          data['uuid']?.toString() ??
+          DateTime.now().millisecondsSinceEpoch.toString();
+      final alerts = Map<String, Map<String, dynamic>>.from(
+        liveSosAlerts.value,
+      );
+      alerts[id] = data;
+      liveSosAlerts.value = alerts;
     });
 
-    _socket!.on('sos_resolved', (data) {
-      if (data is Map<String, dynamic>) {
-        onSosResolved.value = data;
+    _socket!.on('sos_resolved', (raw) {
+      debugPrint('[Socket] Received sos_resolved: $raw');
+      final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+      onSosResolved.value = data;
 
-        final id = data['id']?.toString();
-        if (id != null) {
-          final alerts = Map<String, Map<String, dynamic>>.from(
-            liveSosAlerts.value,
-          );
-          if (alerts.containsKey(id)) {
-            alerts.remove(id);
-            liveSosAlerts.value = alerts;
-          }
+      final id = data['id']?.toString();
+      if (id != null) {
+        final alerts = Map<String, Map<String, dynamic>>.from(
+          liveSosAlerts.value,
+        );
+        if (alerts.containsKey(id)) {
+          alerts.remove(id);
+          liveSosAlerts.value = alerts;
         }
       }
     });
 
     _socket!.onDisconnect((_) {
-      print('Disconnected from Real-Time SOS Socket');
+      debugPrint('[Socket] Disconnected from Real-Time SOS Socket');
     });
   }
 

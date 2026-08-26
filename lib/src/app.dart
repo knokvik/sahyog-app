@@ -13,6 +13,9 @@ const clerkPublishableKey =
 class SahyogApp extends StatelessWidget {
   const SahyogApp({super.key});
 
+  static final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
   @override
   Widget build(BuildContext context) {
     return ClerkAuth(
@@ -22,6 +25,7 @@ class SahyogApp extends StatelessWidget {
       ),
       child: MaterialApp(
         title: 'Sahyog',
+        scaffoldMessengerKey: scaffoldMessengerKey,
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.light,
         theme: AppTheme.lightTheme,
