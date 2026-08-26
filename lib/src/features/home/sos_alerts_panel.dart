@@ -63,9 +63,9 @@ class SosAlertsPanel {
                       Text(
                         '${alerts.length} Active SOS Alert${alerts.length > 1 ? 's' : ''}',
                         style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.5,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
                         ),
                       ),
                       const Text(
@@ -73,7 +73,7 @@ class SosAlertsPanel {
                         style: TextStyle(
                           color: AppColors.criticalRed,
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ],
@@ -81,7 +81,7 @@ class SosAlertsPanel {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.4,
@@ -119,13 +119,13 @@ class SosAlertsPanel {
                       },
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         decoration: BoxDecoration(
                           color: Theme.of(context).brightness == Brightness.dark
                               ? Colors.grey[900]
                               : Colors.grey[50],
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: Theme.of(
                               context,
@@ -134,16 +134,21 @@ class SosAlertsPanel {
                         ),
                         child: Row(
                           children: [
-                            const CircleAvatar(
-                              backgroundColor: AppColors.criticalRed,
-                              radius: 18,
-                              child: Icon(
-                                Icons.sos,
-                                color: Colors.white,
-                                size: 18,
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.emergency_rounded,
+                                color: AppColors.criticalRed,
+                                size: 20,
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,15 +156,17 @@ class SosAlertsPanel {
                                   Text(
                                     type,
                                     style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
                                     ),
                                   ),
+                                  const SizedBox(height: 2),
                                   Text(
                                     'Reported by $reporter',
                                     style: TextStyle(
                                       color: Colors.grey[600],
-                                      fontSize: 13,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w400,
                                     ),
                                   ),
                                 ],
@@ -167,15 +174,15 @@ class SosAlertsPanel {
                             ),
                             if (lat != null && lng != null)
                               Container(
-                                padding: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
                                   color: AppColors.primaryGreen.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Icon(
                                   Icons.near_me_rounded,
                                   color: AppColors.primaryGreen,
-                                  size: 18,
+                                  size: 16,
                                 ),
                               )
                             else
@@ -184,7 +191,7 @@ class SosAlertsPanel {
                                 style: const TextStyle(
                                   color: AppColors.criticalRed,
                                   fontSize: 11,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                           ],
@@ -199,58 +206,62 @@ class SosAlertsPanel {
             if (activeLocalUuid != null && onCancelSos != null) ...[
               SizedBox(
                 width: double.infinity,
-                height: 56,
-                child: FilledButton.icon(
+                height: 50,
+                child: OutlinedButton.icon(
                   onPressed: () {
                     Navigator.pop(context);
                     onCancelSos();
                   },
-                  icon: const Icon(Icons.cancel, size: 20),
+                  icon: const Icon(Icons.cancel, size: 18),
                   label: const Text(
-                    'STOP SOS',
+                    'Stop SOS',
                     style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w500,
                       fontSize: 14,
                     ),
                   ),
-                  style: FilledButton.styleFrom(
+                  style: OutlinedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: AppColors.criticalRed,
+                    side: BorderSide(
+                      color: AppColors.criticalRed.withValues(alpha: 0.8),
+                      width: 1.5,
+                    ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: const BorderSide(
-                        color: AppColors.criticalRed,
-                        width: 2,
-                      ),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     elevation: 0,
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
             ],
             SizedBox(
               width: double.infinity,
-              height: 56,
-              child: FilledButton(
+              height: 50,
+              child: OutlinedButton(
                 onPressed: () {
                   Navigator.pop(context);
                   onGoToSosPanels();
                 },
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.criticalRed,
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: AppColors.criticalRed,
+                  side: BorderSide(
+                    color: AppColors.criticalRed.withValues(alpha: 0.7),
+                    width: 1.4,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   elevation: 0,
                 ),
                 child: const Text(
-                  'GO TO SOS PANELS',
+                  'Go to SOS Panels',
                   style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w500,
                     fontSize: 14,
+                    letterSpacing: 0.3,
                   ),
                 ),
               ),

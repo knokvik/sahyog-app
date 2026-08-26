@@ -536,7 +536,7 @@ class _Tag extends StatelessWidget {
         style: TextStyle(
           color: color,
           fontSize: 10,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );

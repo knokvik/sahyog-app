@@ -579,7 +579,7 @@ class _HomeTabState extends State<HomeTab> with AutomaticKeepAliveClientMixin {
                           key: ValueKey<int>(displayValue),
                           style: TextStyle(
                             fontSize: 24,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w500,
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
