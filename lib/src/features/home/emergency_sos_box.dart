@@ -259,6 +259,72 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
     }
   }
 
+  Future<void> _fetchAndShowSosAlerts() async {
+    try {
+      final res = await widget.api.get('/api/v1/sos');
+      if (res != null) {
+        final list = (res is List)
+            ? res
+            : (res is Map && res['data'] is List)
+                ? res['data'] as List
+                : (res is Map && res['sosReports'] is List)
+                    ? res['sosReports'] as List
+                    : [];
+        final Map<String, Map<String, dynamic>> fetchedMap = {};
+        for (final item in list) {
+          if (item is Map) {
+            final mapItem = Map<String, dynamic>.from(item);
+            final id = mapItem['id']?.toString() ??
+                mapItem['_id']?.toString() ??
+                UniqueKey().toString();
+            final status = mapItem['status']?.toString().toLowerCase();
+            if (status != 'resolved' &&
+                status != 'cancelled' &&
+                status != 'closed') {
+              fetchedMap[id] = mapItem;
+            }
+          }
+        }
+        if (fetchedMap.isNotEmpty) {
+          SocketService.instance.liveSosAlerts.value = {
+            ...SocketService.instance.liveSosAlerts.value,
+            ...fetchedMap,
+          };
+        }
+      }
+    } catch (e) {
+      debugPrint('[EmergencySosBox] Fetch SOS error: $e');
+    }
+
+    if (!mounted) return;
+    final alerts = SocketService.instance.liveSosAlerts.value;
+    if (alerts.isNotEmpty) {
+      SosAlertsPanel.show(
+        context: context,
+        alerts: alerts,
+        activeLocalUuid: _activeLocalUuid,
+        onCancelSos: (_activeSosId != null || _sosFired) ? _cancelSOS : null,
+        onGoToSosPanels: () {
+          if (widget.onSosTap != null) widget.onSosTap!();
+        },
+        onNavigateToLocation: (loc) {
+          if (widget.onSosLocationTap != null) {
+            widget.onSosLocationTap!(loc);
+          }
+        },
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No active SOS alerts registered. Hold center 5s to trigger SOS.',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -270,43 +336,25 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
     return Column(
       children: [
         if (_activeSosId != null || _sosFired) ...[
-          GestureDetector(
-            onTapDown: (_) {
-              _sosHoldTicks = 0;
-              _sosHoldTimer = Timer.periodic(
-                const Duration(milliseconds: 100),
-                (timer) {
-                  if (mounted) {
-                    setState(() {
-                      _sosHoldTicks++;
-                      if (_sosHoldTicks >= 50) {
-                        _sosHoldTimer?.cancel();
-                        _cancelSOS();
-                      }
-                    });
-                  }
-                },
-              );
-            },
-            onTapUp: (_) => _cancelHold(),
-            onTapCancel: () => _cancelHold(),
-            onTap: widget.onSosTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              decoration: BoxDecoration(
-                color: AppColors.criticalRed,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.criticalRed.withOpacity(0.4),
-                    blurRadius: 15,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
+          Container(
+            height: 88,
+            decoration: BoxDecoration(
+              color: AppColors.criticalRed,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.criticalRed, width: 2.0),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.criticalRed.withValues(alpha: 0.35),
+                  blurRadius: 15,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
               child: Stack(
-                alignment: Alignment.center,
                 children: [
+                  // Hold Progress Fill for cancellation
                   if (_sosHoldTicks > 0)
                     Positioned.fill(
                       child: FractionallySizedBox(
@@ -320,65 +368,127 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                         ),
                       ),
                     ),
+
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(
-                        Icons.emergency,
-                        color: Colors.white,
-                        size: 36,
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _sosHoldTicks > 0 ? 'RELEASING...' : 'SOS ACTIVE',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20,
-                              letterSpacing: 2,
+                      // ── Left: SOS Icon (Opens active alerts list) ──
+                      Expanded(
+                        flex: 2,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _fetchAndShowSosAlerts,
+                            child: const Center(
+                              child: Icon(
+                                Icons.emergency_rounded,
+                                color: Colors.white,
+                                size: 32,
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _sosHoldTicks > 0
-                                ? 'Release in ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
-                                : 'Hold for 5 sec to cancel the SOS',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                      if (widget.onSosLocationTap != null) ...[
-                        const Spacer(),
-                        IconButton(
-                          onPressed: () {
-                            if (_activeLocalUuid != null) {
-                              DatabaseHelper.instance
-                                  .getIncidentByUuid(_activeLocalUuid!)
-                                  .then((incident) {
-                                    if (incident != null &&
-                                        incident.lat != null &&
-                                        incident.lng != null) {
-                                      widget.onSosLocationTap!(
-                                        LatLng(incident.lat!, incident.lng!),
-                                      );
-                                    }
-                                  });
+
+                      // Vertical Divider 1
+                      Container(
+                        width: 1.5,
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
+
+                      // ── Center: HOLD TO CANCEL SOS ──
+                      Expanded(
+                        flex: 6,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (widget.onSosTap != null) {
+                              widget.onSosTap!();
+                            } else {
+                              _fetchAndShowSosAlerts();
                             }
                           },
-                          icon: const Icon(
-                            Icons.location_on,
-                            color: Colors.white,
-                            size: 28,
+                          onTapDown: (_) {
+                            _sosHoldTicks = 0;
+                            _sosHoldTimer = Timer.periodic(
+                              const Duration(milliseconds: 100),
+                              (timer) {
+                                if (mounted) {
+                                  setState(() {
+                                    _sosHoldTicks++;
+                                    if (_sosHoldTicks >= 50) {
+                                      _sosHoldTimer?.cancel();
+                                      _cancelSOS();
+                                    }
+                                  });
+                                }
+                              },
+                            );
+                          },
+                          onTapUp: (_) => _cancelHold(),
+                          onTapCancel: () => _cancelHold(),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  _sosHoldTicks > 0 ? 'RELEASING...' : 'SOS ACTIVE',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 19,
+                                    letterSpacing: 1.6,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  _sosHoldTicks > 0
+                                      ? 'Release in ${(5.0 - (_sosHoldTicks / 10)).toStringAsFixed(1)}s'
+                                      : 'Hold 5s to cancel the SOS',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          tooltip: 'View on Map',
                         ),
-                      ],
+                      ),
+
+                      // Vertical Divider 2
+                      Container(
+                        width: 1.5,
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
+
+                      // ── Right: Radar / Scan Button ──
+                      Expanded(
+                        flex: 2,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              NearbySosRadarSheet.show(
+                                context,
+                                onNavigateToLocation: (loc) {
+                                  if (widget.onSosLocationTap != null) {
+                                    widget.onSosLocationTap!(loc);
+                                  }
+                                },
+                              );
+                            },
+                            child: const Center(
+                              child: Icon(
+                                Icons.radar_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -485,36 +595,13 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ── Section 1: Left SOS Icon (Opens configured SOS page popup from below) ──
+                      // ── Section 1: Left SOS Icon (Fetches and opens live configured SOS page) ──
                       Expanded(
                         flex: 2,
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            onTap: () {
-                              final alerts = SocketService.instance.liveSosAlerts.value;
-                              if (alerts.isNotEmpty) {
-                                SosAlertsPanel.show(
-                                  context: context,
-                                  alerts: alerts,
-                                  onGoToSosPanels: () {
-                                    if (widget.onSosTap != null) widget.onSosTap!();
-                                  },
-                                  onNavigateToLocation: (loc) {
-                                    if (widget.onSosLocationTap != null) {
-                                      widget.onSosLocationTap!(loc);
-                                    }
-                                  },
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('No active SOS alerts registered. Hold center 5s to trigger SOS.'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-                            },
+                            onTap: _fetchAndShowSosAlerts,
                             child: const Center(
                               child: Icon(
                                 Icons.emergency_rounded,
@@ -541,26 +628,7 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
                             if (widget.onSosTap != null) {
                               widget.onSosTap!();
                             } else {
-                              final alerts = SocketService.instance.liveSosAlerts.value;
-                              if (alerts.isNotEmpty) {
-                                SosAlertsPanel.show(
-                                  context: context,
-                                  alerts: alerts,
-                                  onGoToSosPanels: () {},
-                                  onNavigateToLocation: (loc) {
-                                    if (widget.onSosLocationTap != null) {
-                                      widget.onSosLocationTap!(loc);
-                                    }
-                                  },
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('No active SOS alerts registered. Hold 5s to trigger SOS.'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              }
+                              _fetchAndShowSosAlerts();
                             }
                           },
                           onTapDown: (_) {
