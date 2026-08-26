@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import '../../core/location_service.dart';
 import '../../theme/app_colors.dart';
 
 class SosAlertsPanel {
@@ -173,16 +174,29 @@ class SosAlertsPanel {
                               ),
                             ),
                             if (lat != null && lng != null)
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryGreen.withValues(alpha: 0.1),
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () {
+                                    LocationService.openDirections(
+                                      lat,
+                                      lng,
+                                      label: 'SOS Alert - $reporter',
+                                    );
+                                  },
                                   borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.near_me_rounded,
-                                  color: AppColors.primaryGreen,
-                                  size: 16,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryGreen.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.near_me_rounded,
+                                      color: AppColors.primaryGreen,
+                                      size: 18,
+                                    ),
+                                  ),
                                 ),
                               )
                             else
