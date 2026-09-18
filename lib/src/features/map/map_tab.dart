@@ -1,0 +1,1031 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../../core/api_client.dart';
+import '../../core/location_service.dart';
+import '../../core/models.dart';
+import '../../theme/app_colors.dart';
+
+class MapTab extends StatefulWidget {
+  const MapTab({super.key, required this.api, this.initialTarget});
+
+  final ApiClient api;
+  final LatLng? initialTarget;
+
+  @override
+  State<MapTab> createState() => _MapTabState();
+}
+
+class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
+  final _locationService = LocationService();
+  final MapController _mapController = MapController();
+
+  LatLng _center = const LatLng(18.5204, 73.8567); // Pune default fallback
+  LatLng? _userLocation;
+  List<_ZoneCircle> _zones = [];
+  final List<_ZoneCircle> _userMarkedZones = [];
+  List<_ResourceMarker> _resources = [];
+  bool _loading = true;
+  String _error = '';
+  Timer? _pollTimer;
+  double _currentZoom = 12.0;
+
+  bool _isMapReady = false;
+  bool _isLegendExpanded = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) _load(silent: true);
+    });
+  }
+
+  void _handleInitialTarget() {
+    if (widget.initialTarget != null && _isMapReady) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          _mapController.move(widget.initialTarget!, 16);
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(MapTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTarget != null &&
+        widget.initialTarget != oldWidget.initialTarget) {
+      _handleInitialTarget();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    try {
+      if (!silent) {
+        setState(() {
+          _loading = true;
+          _error = '';
+        });
+      }
+
+      try {
+        // Just fetch but don't force move the map center here
+        final pos = await _locationService.getCurrentPosition().timeout(
+          const Duration(seconds: 4),
+        );
+        if (mounted) {
+          setState(() => _userLocation = LatLng(pos.latitude, pos.longitude));
+        }
+      } catch (_) {}
+
+      // Fetch zones, resources, and sos
+      List<dynamic> zonesList = <dynamic>[];
+      dynamic sosRaw;
+      try {
+        final disastersRaw = await widget.api.get('/api/v1/disasters');
+        final disasters = disastersRaw is List ? disastersRaw : <dynamic>[];
+        for (final d in disasters) {
+          final disaster = d as Map<String, dynamic>;
+          final id = (disaster['id'] ?? '').toString();
+          if (id.isEmpty) continue;
+          try {
+            final reliefRaw = await widget.api.get(
+              '/api/v1/disasters/$id/relief-zones',
+            );
+            if (reliefRaw is List) zonesList.addAll(reliefRaw);
+          } catch (_) {}
+        }
+        if (zonesList.isEmpty) {
+          final coordinatorZones = await widget.api.get(
+            '/api/v1/coordinator/zones',
+          );
+          zonesList = coordinatorZones is List ? coordinatorZones : <dynamic>[];
+        }
+        sosRaw = await widget.api.get('/api/v1/coordinator/sos');
+      } catch (_) {}
+
+      final zones = <_ZoneCircle>[];
+
+      for (final z in zonesList) {
+        final zone = z as Map<String, dynamic>;
+        final lat = parseLat(zone['center_lat']);
+        final lng = parseLng(zone['center_lng']);
+        if (lat == null || lng == null) continue;
+
+        zones.add(
+          _ZoneCircle(
+            id: (zone['id'] ?? '').toString(),
+            name: (zone['name'] ?? 'Zone').toString(),
+            severity: (zone['severity'] ?? 'red').toString(),
+            radiusMeters: parseLat(zone['radius_meters']) ?? 500,
+            center: LatLng(lat, lng),
+          ),
+        );
+      }
+
+      final markers = <_ResourceMarker>[];
+
+      final resourcesRaw = await widget.api.get('/api/v1/resources');
+      final resources = resourcesRaw is List ? resourcesRaw : <dynamic>[];
+
+      for (final item in resources) {
+        final r = item as Map<String, dynamic>;
+        final parsed = _parsePoint(r['current_location']);
+        if (parsed == null) continue;
+        markers.add(
+          _ResourceMarker(
+            id: (r['id'] ?? '').toString(),
+            type: (r['type'] ?? 'Resource').toString(),
+            status: (r['status'] ?? '').toString(),
+            point: parsed,
+          ),
+        );
+      }
+
+      final sosAlerts = sosRaw is List ? sosRaw : <dynamic>[];
+      for (final item in sosAlerts) {
+        final s = item as Map<String, dynamic>;
+        // Try parsing the item itself (for lat/lng top-level) or its location field
+        final parsed = _parsePoint(s) ?? _parsePoint(s['location']);
+        if (parsed == null) continue;
+        markers.add(
+          _ResourceMarker(
+            id: (s['id'] ?? '').toString(),
+            type: 'SOS',
+            status: (s['status'] ?? '').toString(),
+            point: parsed,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _zones = zones;
+        _resources = markers;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  LatLng? _parsePoint(dynamic raw) {
+    if (raw is Map<String, dynamic>) {
+      final lat = parseLat(raw['lat']);
+      final lng = parseLng(raw['lng']);
+      if (lat != null && lng != null) return LatLng(lat, lng);
+
+      if (raw['coordinates'] is List &&
+          (raw['coordinates'] as List).length >= 2) {
+        final coords = raw['coordinates'] as List;
+        final lngFromCoords = parseLng(coords[0]);
+        final latFromCoords = parseLat(coords[1]);
+        if (latFromCoords != null && lngFromCoords != null) {
+          return LatLng(latFromCoords, lngFromCoords);
+        }
+      }
+    }
+
+    if (raw is String && raw.startsWith('POINT(') && raw.endsWith(')')) {
+      final parts = raw
+          .replaceFirst('POINT(', '')
+          .replaceFirst(')', '')
+          .split(' ');
+      if (parts.length == 2) {
+        final lng = double.tryParse(parts[0]);
+        final lat = double.tryParse(parts[1]);
+        if (lat != null && lng != null) return LatLng(lat, lng);
+      }
+    }
+
+    return null;
+  }
+
+  void _showSosActionSheet(_ResourceMarker marker) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white24 : Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: marker.type == 'SOS'
+                          ? AppColors.criticalRed.withValues(alpha: 0.12)
+                          : AppColors.primaryGreen.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Icon(
+                        marker.type == 'SOS'
+                            ? Icons.emergency_rounded
+                            : Icons.location_on_rounded,
+                        color: marker.type == 'SOS'
+                            ? AppColors.criticalRed
+                            : AppColors.primaryGreen,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          marker.type == 'SOS'
+                              ? 'EMERGENCY SOS SIGNAL'
+                              : marker.type.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Status: ${marker.status.toUpperCase()} • ${marker.point.latitude.toStringAsFixed(4)}, ${marker.point.longitude.toStringAsFixed(4)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _mapController.move(marker.point, 17);
+                      },
+                      icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
+                      label: const Text('Center Map', style: TextStyle(fontWeight: FontWeight.w500)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        LocationService.openDirections(
+                          marker.point.latitude,
+                          marker.point.longitude,
+                          label: 'SOS Emergency Signal',
+                        );
+                      },
+                      icon: const Icon(Icons.near_me_rounded, size: 18),
+                      label: const Text('Navigate', style: TextStyle(fontWeight: FontWeight.w500)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryGreen,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            if (_error.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Text(
+                  _error,
+                  style: const TextStyle(color: AppColors.criticalRed),
+                ),
+              ),
+            Expanded(
+              child: Stack(
+                children: [
+                  Container(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF1B1B1B)
+                        : Colors.grey[200],
+                    child: FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _zones.isNotEmpty
+                            ? _zones.first.center
+                            : _center,
+                        initialZoom: _currentZoom,
+                        minZoom: 3,
+                        maxZoom: 18,
+                        onMapReady: () {
+                          setState(() => _isMapReady = true);
+                          _handleInitialTarget();
+                        },
+                        onPositionChanged: (pos, hasGesture) {
+                          if (hasGesture) {
+                            setState(() {
+                              _currentZoom = pos.zoom;
+                            });
+                          }
+                        },
+                        onLongPress: (tapPosition, latLng) {
+                          setState(() {
+                            _userMarkedZones.add(
+                              _ZoneCircle(
+                                id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+                                name: 'User Marked Zone',
+                                severity: 'blue',
+                                radiusMeters: 250,
+                                center: latLng,
+                              ),
+                            );
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Zone marker added (long-press).'),
+                            ),
+                          );
+                        },
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.example.sahyog_app',
+                          tileDisplay: const TileDisplay.fadeIn(),
+                          tileBuilder:
+                              Theme.of(context).brightness == Brightness.dark
+                              ? _darkTileBuilder
+                              : null,
+                        ),
+                        if (_userLocation != null)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: _userLocation!,
+                                width: 60,
+                                height: 60,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Container(
+                                      width: 42,
+                                      height: 42,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.15,
+                                            ),
+                                            blurRadius: 10,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.gps_fixed,
+                                      color: AppColors.primaryGreen,
+                                      size: 26,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        CircleLayer(
+                          circles: _zones.map((z) {
+                            return CircleMarker(
+                              point: z.center,
+                              radius: z.radiusMeters.clamp(80.0, 1000.0),
+                              useRadiusInMeter: true,
+                              color: _severityColor(
+                                z.severity,
+                              ).withValues(alpha: 0.12),
+                              borderColor: _severityColor(z.severity).withValues(alpha: 0.7),
+                              borderStrokeWidth: 1.5,
+                            );
+                          }).toList(),
+                        ),
+                        CircleLayer(
+                          circles: _userMarkedZones.map((z) {
+                            return CircleMarker(
+                              point: z.center,
+                              radius: z.radiusMeters.clamp(50.0, 500.0),
+                              useRadiusInMeter: true,
+                              color: AppColors.primaryGreen.withValues(
+                                alpha: 0.12,
+                              ),
+                              borderColor: AppColors.primaryGreen.withValues(alpha: 0.7),
+                              borderStrokeWidth: 1.5,
+                            );
+                          }).toList(),
+                        ),
+                        MarkerLayer(
+                          markers: _resources.map((r) {
+                            final isSos = r.type == 'SOS';
+                            return Marker(
+                              point: r.point,
+                              width: isSos ? 44 : 100,
+                              height: isSos ? 44 : 50,
+                              child: isSos
+                                  ? _SosMarker(
+                                      onTap: () => _showSosActionSheet(r),
+                                    )
+                                  : GestureDetector(
+                                      onTap: () => _showSosActionSheet(r),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(
+                                                8,
+                                              ),
+                                              boxShadow: const [
+                                                BoxShadow(
+                                                  blurRadius: 4,
+                                                  color: Color(0x22000000),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Text(
+                                              r.type,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.black,
+                                              ),
+                                            ),
+                                          ),
+                                          const Icon(
+                                            Icons.location_on,
+                                            color: AppColors.primaryGreen,
+                                            size: 22,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_currentZoom >= 17.9)
+                    Positioned(
+                      top: 16,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'MAX ZOOM (100%)',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    right: 16,
+                    bottom: 90,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FloatingActionButton(
+                          heroTag: "map_my_location",
+                          mini: true,
+                          onPressed: () async {
+                            try {
+                              final pos = await _locationService
+                                  .getCurrentPosition()
+                                  .timeout(const Duration(seconds: 10));
+                              final ll = LatLng(pos.latitude, pos.longitude);
+                              if (mounted) {
+                                setState(() {
+                                  _userLocation = ll;
+                                });
+                                // Detect San Francisco emulator default
+                                final isEmulatorSF =
+                                    (ll.latitude > 37.42 &&
+                                        ll.latitude < 37.43) &&
+                                    (ll.longitude > -122.09 &&
+                                        ll.longitude < -122.08);
+
+                                if (isEmulatorSF && _zones.isNotEmpty) {
+                                  _mapController.move(_zones.first.center, 15);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Emulator detected. Staying in Pune.',
+                                      ),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                } else {
+                                  _mapController.move(ll, 16);
+                                }
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Could not locate device: $e',
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primaryGreen,
+                          child: const Icon(Icons.gps_fixed),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton(
+                          heroTag: "map_zoom_in",
+                          mini: true,
+                          onPressed: () {
+                            final zoom = _mapController.camera.zoom;
+                            _mapController.move(
+                              _mapController.camera.center,
+                              zoom + 1,
+                            );
+                          },
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primaryGreen,
+                          child: const Icon(Icons.add),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton(
+                          heroTag: "map_zoom_out",
+                          mini: true,
+                          onPressed: () {
+                            final zoom = _mapController.camera.zoom;
+                            _mapController.move(
+                              _mapController.camera.center,
+                              zoom - 1,
+                            );
+                          },
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primaryGreen,
+                          child: const Icon(Icons.remove),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // ── Collapsible Floating Legend with Integrated Loading Indicator ──
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeInOutCubic,
+                    bottom: 24,
+                    left: _isLegendExpanded ? 16 : -180,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 180,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).cardColor.withValues(alpha: 0.95),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        'ZONES',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                      if (_loading) ...[
+                                        const SizedBox(width: 6),
+                                        const SizedBox(
+                                          width: 10,
+                                          height: 10,
+                                          child: CircularProgressIndicator(
+                                            color: AppColors.primaryGreen,
+                                            strokeWidth: 1.8,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  InkWell(
+                                    onTap: () => setState(() => _isLegendExpanded = false),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(2),
+                                      child: Icon(
+                                        Icons.chevron_left_rounded,
+                                        size: 18,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  _CompactDot(
+                                    color: AppColors.criticalRed,
+                                    label: 'Red',
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _CompactDot(
+                                    color: AppColors.warningAmber,
+                                    label: 'Yellow',
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _CompactDot(
+                                    color: AppColors.infoBlue,
+                                    label: 'Blue',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'MARKERS',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  _CompactDot(
+                                    color: AppColors.criticalRed,
+                                    label: 'SOS',
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _CompactDot(
+                                    color: AppColors.primaryGreen,
+                                    label: 'User',
+                                  ),
+                                ],
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 6.0),
+                                child: Divider(height: 1),
+                              ),
+                              Text(
+                                _loading
+                                    ? 'Updating signals...'
+                                    : 'Items & SOS: ${_resources.length}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // Sticky Toggle Chevron Button on Edge
+                        GestureDetector(
+                          onTap: () => setState(() => _isLegendExpanded = !_isLegendExpanded),
+                          child: Container(
+                            width: 26,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor.withValues(alpha: 0.95),
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(10),
+                                bottomRight: Radius.circular(10),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.12),
+                                  blurRadius: 6,
+                                  offset: const Offset(2, 2),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Icon(
+                                _isLegendExpanded
+                                    ? Icons.chevron_left_rounded
+                                    : Icons.chevron_right_rounded,
+                                color: Colors.grey[700],
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _load,
+        backgroundColor: AppColors.primaryGreen,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.refresh),
+      ),
+    );
+  }
+
+  Color _severityColor(String severity) {
+    switch (severity.toLowerCase()) {
+      case 'yellow':
+        return AppColors.warningAmber;
+      case 'blue':
+        return AppColors.infoBlue;
+      default:
+        return AppColors.criticalRed;
+    }
+  }
+
+  Widget _darkTileBuilder(
+    BuildContext context,
+    Widget tileWidget,
+    TileImage tile,
+  ) {
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix([
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+      ]),
+      child: tileWidget,
+    );
+  }
+}
+
+class _CompactDot extends StatelessWidget {
+  const _CompactDot({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(radius: 5, backgroundColor: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+        ),
+      ],
+    );
+  }
+}
+
+class _ZoneCircle {
+  _ZoneCircle({
+    required this.id,
+    required this.name,
+    required this.severity,
+    required this.radiusMeters,
+    required this.center,
+  });
+
+  final String id;
+  final String name;
+  final String severity;
+  final double radiusMeters;
+  final LatLng center;
+}
+
+class _ResourceMarker {
+  _ResourceMarker({
+    required this.id,
+    required this.type,
+    required this.status,
+    required this.point,
+  });
+
+  final String id;
+  final String type;
+  final String status;
+  final LatLng point;
+}
+
+class _SosMarker extends StatefulWidget {
+  const _SosMarker({this.onTap});
+  final VoidCallback? onTap;
+
+  @override
+  State<_SosMarker> createState() => _SosMarkerState();
+}
+
+class _SosMarkerState extends State<_SosMarker>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final t = _controller.value;
+          return SizedBox(
+            width: 44,
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Pulse ripple
+                Opacity(
+                  opacity: (1.0 - t).clamp(0.0, 1.0),
+                  child: Container(
+                    width: 24 + (20 * t),
+                    height: 24 + (20 * t),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.criticalRed.withValues(alpha: 0.8),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                // Standard red pin badge
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: AppColors.criticalRed,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.criticalRed.withValues(alpha: 0.4),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.emergency_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}

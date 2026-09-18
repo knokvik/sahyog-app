@@ -1,0 +1,135 @@
+## 0.0.14-beta
+
+* BREAKING CHANGE: The `ClerkDeepLink` class has been removed, since the information
+  it carried is no longer being used. Deep links are now passed into the Clerk SDK 
+  as `Stream<Uri?> deepLinkStream` in the `ClerkAuthConfig`. 
+
+* feat: deprecate strategy in clerkdeeplink [#345]
+* fix: make sso sign up complete [#343]
+* feat: expose externalid on user object [#339]
+* feat: push error stream up to clerk_flutter [#335]
+* fix: dark-mode base inversion checking on strategy [#333]
+* fix: ensure api throws external errors rather than clerk errors [#331]
+* feat: improve sso provider logos display on dark themes [#329]
+* fix: add externalerrorcollection to autherror [#316]
+* feat: apple and google auth token support [#308]
+* feat: allow other launchmodes for sso [#307]
+* fix: sso sign up [#306]
+* fix: improve phone number handling [#304]
+* feat: add theme extension to drive colors and text styles [#298]
+
+## 0.0.13-beta
+
+* feat: make test helpers globally available [#292]
+* feat: improve email link sign in up [#267]
+* fix: move session token polling from api to auth for better error reporting [#244]
+* feat: bring sign up ux in line with other sdks [#246]
+* fix: force org creation when needed [#271]
+* change: session token polling now defaults to ON (previous versions had it defaulting to OFF) [#263]
+* fix: bring session token polling with orgs inline with other SDKs [#263]
+* fix: enable re-initialisation of clerksdkgrammar [#261]
+* feat: enable sign up with enterprise sso [#247]
+* fix: enable sign in using enterprise sso [#248]
+
+## 0.0.12-beta
+
+* chore: align release version with `clerk_auth` 0.0.12-beta package
+* fix: ensure decoding of UserPublic.identifier is optional [#256]
+
+## 0.0.11-beta
+
+* feat: **BREAKING** Upgrade to Flutter 3.27.4 and Dart 3.6.2 [#242]
+* fix: re-enable email link in signIn [#241]
+* fix: restrict sign up fields to known entities [#227]
+* fix: allow email address to be edited for verification [#226]
+* fix: allow landscape logos to look better in components [#225]
+* fix: remove branding if required in dashboard [#224]
+* fix: allow obscuration on sign in password to be togglable [#223]
+* fix: enable legal consent confirmation [#222]
+* fix: resolve issues with the sessionTokenStream [#221]
+* fix: make ui respond better when wifi is unavailable [#212]
+* fix: refactor sign-in panel to keep password and confirmation together [#208]
+* fix: make google authentication work directly with tokens [#207]
+* fix: minor refactoring to caching [#204]
+
+## 0.0.10-beta
+
+* feat: allow app-defined redirects aka deep-links (with example) [#170]
+* feat: add password reset flow [#161]
+* feat: clear cookies on sign out [#188]
+* feat: refactor identifier input [#197]
+* feat: add offline support [#200]
+* feat: grammatical sentence formatting [#192]
+
+See changes made in `clerk_auth` package as part of this release.
+
+## 0.0.9-beta
+
+* feat: support fall-back localization default English [#163]
+* fix: update user agent to support desktop/mobile modes [#166]
+
+## 0.0.8-beta
+
+* feat: add generated clerk_backend_api package [#82]
+* feat: implement organizations [#150] 
+
+## 0.0.7-dev
+
+* fix: rationalise clerk auth exports [#105]
+* fix: session token broken [#97]
+* feat: enable session tokens to be created and updated per organization [#97]
+* fix: enable telemetry to be disabled and endpoint to be set from env [#97]
+* fix: allow telemetry period to be set from environment too [#97]
+* fix: add check for malformed jwt into session token [#97]
+* feat: add external accounts to user profile and start connect account journey [#118]
+* fix: bugs in sign up flow [#127]
+* fix: add failed status to enum [#112]
+* feat: enable `sessionToken()` to return templated JWT tokens for external vendors. [#93]
+* fix: improve multilingual support [#128]
+* fix: connecting a new account [#121]
+* fix: surface server errors in the ui [#122] 
+* feat: replace parameters with config object [#120]
+* fix: amalgamate Closeable and AnimatedCloseable [#138]
+* fix: add translations for sign in error [#143]
+* fix: mark all models as immutable [#113] 
+* fix: add toString to models [#140]
+* fix: refactor attemptSignIn [#147]
+* fix: refactor HttpService [#149]
+* feat: add timeouts to loading overlay [#142]
+* feat: custom sign in example [#141]
+
+## 0.0.6-dev
+
+- Improve updateUser to utilise environment config #98
+- Fix ClerkAuthState missing after telemetry addition #102
+
+## 0.0.5-dev
+
+- Lower flutter version to 3.10.0 #41
+- Remove usage of public_key #45
+- Add data/state persistor #46
+- Add user profile editing #55
+- Switch add account routing from overlays to routes #58
+- Resolve issues in UI when strategies are missing #65
+- Add telemetry support #81
+- Remove dependency on inset-box-shadow #87
+- Rename ClerkAuthProvider to ClerkAuthState to clarify its usage #99
+
+## 0.0.4-dev
+
+- Improved SSO popup user experience #33
+- Updated async initialisation and token refresh #42
+- Added documentation #36
+- Improved formatting for pub score #34 #35
+
+## 0.0.3-dev
+
+- Pre-release alpha.
+
+## 0.0.2-dev
+
+- Pre-alpha development.
+
+## 0.0.1
+
+- Pre-alpha version.
