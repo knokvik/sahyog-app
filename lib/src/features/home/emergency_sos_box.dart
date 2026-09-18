@@ -13,6 +13,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'nearby_sos_radar_sheet.dart';
 import 'sos_alerts_panel.dart';
+import '../../core/mesh_service.dart';
 
 class EmergencySosBox extends StatefulWidget {
   const EmergencySosBox({
@@ -139,9 +140,19 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
         );
       }
     } else if (mounted) {
+      MeshService.instance.startBroadcastingSOS({
+        'uuid': incident.uuid,
+        'type': incident.type,
+        'lat': pos?.latitude,
+        'lng': pos?.longitude,
+        'reporter_id': widget.user.id,
+        'reporter_name': widget.user.name,
+        'reporter_phone': widget.user.phone,
+        'hop_count': 0,
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('SOS saved. Sync pending — will retry automatically.'),
+          content: Text('Offline! Broadcasting SOS via BLE Mesh...'),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 4),
         ),
@@ -163,6 +174,13 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
       'CANCEL_INITIATED',
       'backendId=$backendIdToCancel',
     );
+
+    // Broadcast cancellation via mesh so nearby phones remove this alert
+    if (uuidToCancel != null) {
+      MeshService.instance.broadcastCancellation(uuidToCancel);
+    } else {
+      MeshService.instance.stopBroadcasting();
+    }
 
     if (mounted) {
       setState(() {

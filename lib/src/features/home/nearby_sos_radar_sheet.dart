@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../../core/location_service.dart';
 import '../../core/socket_service.dart';
+import '../../core/mesh_service.dart';
 import '../../theme/app_colors.dart';
 
 class NearbySosRadarSheet extends StatefulWidget {
@@ -40,6 +41,7 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
   @override
   void dispose() {
     _waveController.dispose();
+    MeshService.instance.stopRadarScanner();
     super.dispose();
   }
 
@@ -48,9 +50,11 @@ class _NearbySosRadarSheetState extends State<NearbySosRadarSheet>
       _isScanning = !_isScanning;
       if (_isScanning) {
         _waveController.repeat();
+        MeshService.instance.startRadarScanner();
       } else {
         _waveController.stop();
         _waveController.reset();
+        MeshService.instance.stopRadarScanner();
       }
     });
   }

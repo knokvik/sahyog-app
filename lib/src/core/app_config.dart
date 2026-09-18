@@ -1,5 +1,5 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 
 class AppConfig {
   static const _envBaseUrl = String.fromEnvironment('API_BASE_URL');
@@ -14,23 +14,31 @@ class AppConfig {
   static const androidEmulatorUrl = 'http://10.0.2.2:$port';
   // Primary URL for Physical Devices on local WiFi
   static const physicalDeviceUrl = 'http://$localWifiIp:$port';
+  // Production Deployed URL (release APK)
+  static const productionUrl = 'https://sahyog-wq9v.onrender.com';
 
   static String get baseUrl {
-    if (_envBaseUrl.isNotEmpty) return _envBaseUrl;
+    String url = _envBaseUrl;
 
-    if (kIsWeb) {
-      return localhostUrl;
+    if (url.isEmpty) {
+      if (kReleaseMode) {
+        url = productionUrl;
+      } else if (kIsWeb) {
+        url = localhostUrl;
+      } else {
+        try {
+          if (Platform.isAndroid) {
+            url = androidEmulatorUrl;
+          } else if (Platform.isIOS || Platform.isMacOS) {
+            url = localhostUrl;
+          } else {
+            url = physicalDeviceUrl;
+          }
+        } catch (_) {
+          url = physicalDeviceUrl;
+        }
+      }
     }
-
-    try {
-      if (Platform.isAndroid) {
-        return androidEmulatorUrl;
-      }
-      if (Platform.isIOS || Platform.isMacOS) {
-        return localhostUrl;
-      }
-    } catch (_) {}
-
-    return physicalDeviceUrl;
+    return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 }
