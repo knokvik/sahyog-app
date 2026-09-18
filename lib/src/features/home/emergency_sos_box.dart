@@ -140,21 +140,27 @@ class _EmergencySosBoxState extends State<EmergencySosBox>
         );
       }
     } else if (mounted) {
-      MeshService.instance.startBroadcastingSOS({
-        'uuid': incident.uuid,
-        'type': incident.type,
-        'lat': pos?.latitude,
-        'lng': pos?.longitude,
-        'reporter_id': widget.user.id,
-        'reporter_name': widget.user.name,
-        'reporter_phone': widget.user.phone,
-        'hop_count': 0,
-      });
+      if (MeshService.isSupported) {
+        MeshService.instance.startBroadcastingSOS({
+          'uuid': incident.uuid,
+          'type': incident.type,
+          'lat': pos?.latitude,
+          'lng': pos?.longitude,
+          'reporter_id': widget.user.id,
+          'reporter_name': widget.user.name,
+          'reporter_phone': widget.user.phone,
+          'hop_count': 0,
+        });
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Offline! Broadcasting SOS via BLE Mesh...'),
+        SnackBar(
+          content: Text(
+            MeshService.isSupported
+                ? 'Offline! Broadcasting SOS via BLE Mesh...'
+                : 'SOS saved. Sync pending — will retry automatically.',
+          ),
           backgroundColor: Colors.orange,
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
         ),
       );
     }

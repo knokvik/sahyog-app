@@ -12,6 +12,10 @@ class MeshService {
   static final MeshService instance = MeshService._internal();
   MeshService._internal();
 
+  /// Android Nearby Connections only — no-op on iOS/desktop/web.
+  static bool get isSupported =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
   final Strategy strategy = Strategy.P2P_CLUSTER; // CLUSTER is required for true M-to-N mesh topologies
   final String serviceId = 'com.sahyog.mesh'; // Unique identifier for our app
 
@@ -25,6 +29,7 @@ class MeshService {
   final Set<String> _knownEndpoints = {};
 
   Future<bool> requestPermissions() async {
+    if (!isSupported) return false;
     Map<Permission, PermissionStatus> statuses = await [
       Permission.bluetooth,
       Permission.bluetoothAdvertise,
@@ -43,7 +48,7 @@ class MeshService {
 
   /// Called by the victim when offline to start sending distress signals
   Future<void> startBroadcastingSOS(Map<String, dynamic> payload) async {
-    if (isBroadcasting) return;
+    if (!isSupported || isBroadcasting) return;
     
     bool hasPermissions = await requestPermissions();
     if (!hasPermissions) return;
@@ -89,6 +94,10 @@ class MeshService {
   }
 
   void stopBroadcasting() {
+    if (!isSupported) {
+      isBroadcasting = false;
+      return;
+    }
     Nearby().stopAdvertising();
     Nearby().stopAllEndpoints();
     isBroadcasting = false;
@@ -97,6 +106,7 @@ class MeshService {
 
   /// Broadcast a cancellation signal so nearby phones remove this SOS
   Future<void> broadcastCancellation(String uuid) async {
+    if (!isSupported) return;
     stopBroadcasting();
 
     bool hasPermissions = await requestPermissions();
@@ -146,7 +156,7 @@ class MeshService {
 
   /// Called by the Mesh Radar UI to discover nearby SOS signals
   Future<void> startRadarScanner() async {
-    if (isScanning) return;
+    if (!isSupported || isScanning) return;
     
     bool hasPermissions = await requestPermissions();
     if (!hasPermissions) return;
@@ -202,6 +212,10 @@ class MeshService {
   }
 
   void stopRadarScanner() {
+    if (!isSupported) {
+      isScanning = false;
+      return;
+    }
     Nearby().stopDiscovery();
     isScanning = false;
     _knownEndpoints.clear();
@@ -274,6 +288,7 @@ class MeshService {
   }
 
   Future<void> startBroadcastingRelay(Map<String, dynamic> payload) async {
+    if (!isSupported) return;
     // Stop current scanning/broadcasting to switch roles if necessary
     stopBroadcasting();
     stopRadarScanner();

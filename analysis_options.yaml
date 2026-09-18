@@ -16,6 +16,7 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    - apk/**
     - packages/clerk_flutter/example/**
 include: package:flutter_lints/flutter.yaml
 
