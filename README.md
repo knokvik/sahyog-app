@@ -1,4 +1,8 @@
-**Sahyog phone app**
+<p align="center">
+  <img src="assets/sahyog-logo.png" alt="Sahyog" width="96" />
+</p>
+
+<p align="center"><strong>Sahyog App</strong></p>
 
 This is the JanRakshak app people carry. A citizen can ask for help. A volunteer can see work and the map. A coordinator can watch the ground. If the network drops, the SOS stays on the phone and can hop to a nearby phone over Bluetooth until someone has a signal.
 
